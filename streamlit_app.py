@@ -93,7 +93,7 @@ def get_image_positions(slide):
 def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positions,
                             show_details=False, mismatch_action='truncate'):
     """
-    استبدال الصور في الشريحة مع الحفاظ على المواقع والأحجام.
+    استبدال الصور في الشريحة مع الحفاظ على المواقع والأحجام والتنسيقات.
     """
     if not os.path.exists(images_folder):
         return 0, f"المجلد {images_folder} غير موجود"
@@ -150,21 +150,35 @@ def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positi
                 image_filename = images[i]
 
         image_path = os.path.join(images_folder, image_filename)
+        shape = pos_info['shape']
 
         try:
-            shape = pos_info['shape']
-            left, top, width, height = pos_info['left'], pos_info['top'], pos_info['width'], pos_info['height']
-            sp_tree = slide.shapes._spTree
-            sp_tree.remove(shape._element)
-            new_pic = slide.shapes.add_picture(image_path, left, top, width, height)
-            replaced_count += 1
-            if show_details:
-                st.success(f"✅ تم استبدال الصورة (حذف وإضافة): {image_filename}")
+            if pos_info['type'] == 'placeholder':
+                placeholder = shape
+                placeholder.insert_picture(image_path)
+                replaced_count += 1
+                if show_details:
+                    st.success(f"✅ تم استبدال صورة placeholder مع الحفاظ على التنسيقات: {image_filename}")
+            elif pos_info['type'] == 'picture':
+                # الطريقة الأفضل لاستبدال صورة عادية هي استبدال بيانات الصورة مباشرة
+                picture_shape = shape
+                picture = picture_shape._pic
+                image_part = picture.blip
+                
+                with open(image_path, 'rb') as f:
+                    image_bytes = f.read()
+                
+                image_part.blob = image_bytes
+                replaced_count += 1
+                if show_details:
+                    st.success(f"✅ تم استبدال الصورة العادية مع الحفاظ على التنسيقات: {image_filename}")
+        
         except Exception as e:
             if show_details:
                 st.warning(f"⚠ فشل استبدال الصورة {image_filename}: {e}")
 
     return replaced_count, "تم بنجاح"
+
 
 def main():
     if uploaded_pptx and uploaded_zip:
