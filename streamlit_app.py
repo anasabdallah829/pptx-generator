@@ -1,83 +1,89 @@
 import streamlit as st
-from pptx import Presentation
-from pptx.util import Inches
-from pptx.enum.shapes import MSO_SHAPE_TYPE
 import os
 import zipfile
-import tempfile
-from io import BytesIO
+import io
+from pptx import Presentation
+from pptx.util import Inches
 
-st.set_page_config(page_title="PPTX Generator", layout="centered")
-st.title("📸 PowerPoint Slide Generator")
+def process_files(zip_file, pptx_file):
+    """
+    Processes the uploaded ZIP and PPTX files to create a new presentation.
 
-pptx_file = st.file_uploader("Upload PowerPoint Template (.pptx)", type=["pptx"])
-zip_file = st.file_uploader("Upload ZIP of Folders with Images", type=["zip"])
+    - Extracts folder names from the ZIP file.
+    - Creates a new title slide for each folder in the existing PPTX file.
+    
+    :param zip_file: A Streamlit UploadedFile object for the ZIP file.
+    :param pptx_file: A Streamlit UploadedFile object for the PPTX file.
+    :return: A BytesIO object of the modified PPTX file, or None if an error occurs.
+    """
+    try:
+        # Load the PowerPoint presentation from the uploaded file object
+        prs = Presentation(pptx_file)
+        
+        # Read the contents of the ZIP file into a BytesIO object
+        zip_content = io.BytesIO(zip_file.read())
+        
+        # Extract unique top-level folder names from the ZIP file
+        folder_names = set()
+        with zipfile.ZipFile(zip_content, 'r') as zip_ref:
+            for member in zip_ref.infolist():
+                # Split the path to get the top-level folder name
+                path_parts = member.filename.split(os.sep)
+                # Ensure the path is not empty and is a directory
+                if path_parts and path_parts[0] and member.is_dir():
+                    folder_names.add(path_parts[0])
 
-def get_picture_placeholders(slide):
-    return [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
+        # Add a new title slide for each folder found in the ZIP
+        # We sort the folder names to ensure a consistent slide order
+        for folder_name in sorted(list(folder_names)):
+            slide_layout = prs.slide_layouts[5] # Using the "Title Only" layout
+            slide = prs.slides.add_slide(slide_layout)
+            title = slide.shapes.title
+            title.text = f"Folder: {folder_name}"
 
-def add_images_to_slide(slide, image_paths, positions):
-    for img_path, ref_shape in zip(image_paths, positions):
-        slide.shapes.add_picture(
-            img_path,
-            left=ref_shape.left,
-            top=ref_shape.top,
-            width=ref_shape.width,
-            height=ref_shape.height
-        )
+        # Save the modified presentation to an in-memory buffer
+        output_stream = io.BytesIO()
+        prs.save(output_stream)
+        output_stream.seek(0)
+        
+        return output_stream
+        
+    except Exception as e:
+        st.error(f"An unexpected error occurred during processing: {e}")
+        return None
 
-def add_title(slide, text):
-    for shape in slide.shapes:
-        if shape.has_text_frame:
-            shape.text = text
-            break
+# --- Streamlit Application UI ---
 
-if pptx_file and zip_file and st.button("Generate PPTX"):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        pptx_path = os.path.join(tmpdir, "template.pptx")
-        zip_path = os.path.join(tmpdir, "images.zip")
+# Set up the page configuration
+st.set_page_config(page_title="PowerPoint Folder Processor", layout="centered")
+st.title("PowerPoint Folder Processor 📁")
+st.markdown("---")
 
-        with open(pptx_path, "wb") as f:
-            f.write(pptx_file.read())
+st.write(
+    "Upload a **ZIP file** containing folders and an existing **PowerPoint file (.pptx)**. "
+    "This tool will create a new slide for each top-level folder in the ZIP file and append it to the presentation."
+)
 
-        with open(zip_path, "wb") as f:
-            f.write(zip_file.read())
+# File upload widgets
+zip_file_upload = st.file_uploader("1. Upload your ZIP file:", type=["zip"])
+pptx_file_upload = st.file_uploader("2. Upload your PowerPoint (.pptx) file:", type=["pptx"])
 
-        extract_dir = os.path.join(tmpdir, "unzipped")
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_dir)
-
-        prs = Presentation(pptx_path)
-        template_slide = prs.slides[0]
-        layout = template_slide.slide_layout
-        ref_images = get_picture_placeholders(template_slide)
-
-        folders = sorted([
-            f for f in os.listdir(extract_dir)
-            if os.path.isdir(os.path.join(extract_dir, f))
-        ])
-
-        # الشريحة الأولى تبقى كما هي
-        for idx, folder in enumerate(folders):
-            folder_path = os.path.join(extract_dir, folder)
-            image_files = sorted([
-                os.path.join(folder_path, f)
-                for f in os.listdir(folder_path)
-                if f.lower().endswith((".png", ".jpg", ".jpeg"))
-            ])
-
-            if idx == 0:
-                # الشريحة الأولى يتم تعديل عنوانها وصورها
-                slide = template_slide
+# Processing button
+if st.button("Process and Generate Presentation"):
+    if zip_file_upload is not None and pptx_file_upload is not None:
+        with st.spinner("Processing files and generating new presentation... 🔄"):
+            modified_pptx_stream = process_files(zip_file_upload, pptx_file_upload)
+            
+            if modified_pptx_stream:
+                st.success("Processing complete! Your presentation is ready for download. 🎉")
+                # Download button for the modified file
+                st.download_button(
+                    label="Download Modified PPTX",
+                    data=modified_pptx_stream,
+                    file_name="modified_presentation.pptx",
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                )
             else:
-                slide = prs.slides.add_slide(layout)
-
-            add_title(slide, folder)
-            add_images_to_slide(slide, image_files, ref_images)
-
-        output = BytesIO()
-        prs.save(output)
-        output.seek(0)
-
-        st.success("✅ تم إنشاء العرض بنجاح!")
-        st.download_button("📥 تحميل العرض النهائي", output, file_name="final_presentation.pptx")
+                st.error("Failed to process files. Please check the file formats and contents and try again.")
+    else:
+        st.warning("Please upload both a ZIP and a PPTX file to proceed.")
