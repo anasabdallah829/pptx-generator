@@ -1,99 +1,94 @@
 import streamlit as st
 import zipfile
 import os
-import tempfile
+import io
 from pptx import Presentation
 from pptx.enum.shapes import PP_PLACEHOLDER
-from pptx.util import Inches, Pt
-from io import BytesIO
+from pptx.util import Inches
 
-st.set_page_config(page_title="PowerPoint Image Replacer", page_icon="📊")
+st.set_page_config(page_title="PowerPoint Image Replacer", layout="centered")
+st.title("🔄 PowerPoint Image & Placeholder Replacer")
 
-st.title("📊 PowerPoint Image Replacer with Placeholders")
-
-uploaded_pptx = st.file_uploader("📂 ارفع ملف PowerPoint (.pptx)", type=["pptx"])
-uploaded_zip = st.file_uploader("🖼️ ارفع ملف الصور (.zip)", type=["zip"])
+uploaded_pptx = st.file_uploader("📂 اختر ملف PowerPoint (.pptx)", type=["pptx"])
+uploaded_zip = st.file_uploader("🗜️ اختر ملف ZIP يحتوي على مجلدات صور", type=["zip"])
 
 if uploaded_pptx and uploaded_zip:
-    with st.status("⏳ جاري معالجة الملفات...", expanded=True) as status:
-        # إنشاء مجلد مؤقت
-        with tempfile.TemporaryDirectory() as tmpdir:
-            pptx_path = os.path.join(tmpdir, uploaded_pptx.name)
-            zip_path = os.path.join(tmpdir, uploaded_zip.name)
+    if st.button("🚀 بدء المعالجة"):
+        try:
+            st.info("📦 جاري استخراج الصور من ملف ZIP...")
+            zip_bytes = io.BytesIO(uploaded_zip.read())
+            with zipfile.ZipFile(zip_bytes, "r") as zip_ref:
+                temp_dir = "temp_images"
+                if os.path.exists(temp_dir):
+                    import shutil
+                    shutil.rmtree(temp_dir)
+                os.makedirs(temp_dir)
+                zip_ref.extractall(temp_dir)
 
-            # حفظ الملفات
-            with open(pptx_path, "wb") as f:
-                f.write(uploaded_pptx.getbuffer())
-            with open(zip_path, "wb") as f:
-                f.write(uploaded_zip.getbuffer())
+            # قراءة البوربوينت
+            st.info("📄 جاري قراءة ملف PowerPoint...")
+            prs = Presentation(io.BytesIO(uploaded_pptx.read()))
 
-            # فك ضغط الصور
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(tmpdir)
-
-            # قراءة مجلدات الصور
-            folders = [os.path.join(tmpdir, d) for d in os.listdir(tmpdir)
-                       if os.path.isdir(os.path.join(tmpdir, d))]
-            if not folders:
-                st.error("❌ ملف ZIP لا يحتوي على مجلدات صور!")
+            # جمع مجلدات الصور
+            folder_paths = [os.path.join(temp_dir, d) for d in os.listdir(temp_dir) if os.path.isdir(os.path.join(temp_dir, d))]
+            if not folder_paths:
+                st.error("❌ ملف ZIP لا يحتوي على مجلدات صور.")
                 st.stop()
 
-            # فتح العرض التقديمي
-            prs = Presentation(pptx_path)
+            slide_count = len(prs.slides)
+            st.info(f"📊 الملف يحتوي على {slide_count} شريحة.")
 
-            # إحصاء الـ placeholders
-            placeholder_count = 0
-            for slide in prs.slides:
-                for shape in slide.shapes:
-                    if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
-                        placeholder_count += 1
-
-            st.write(f"📊 عدد الـ placeholders: {placeholder_count}")
-
-            # معالجة الشرائح
             slide_index = 0
-            for folder in folders:
-                images = [os.path.join(folder, img) for img in os.listdir(folder)
-                          if img.lower().endswith((".png", ".jpg", ".jpeg"))]
-
+            replaced_count = 0
+            for folder in folder_paths:
+                images = [f for f in os.listdir(folder) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
                 if not images:
-                    st.warning(f"⚠️ المجلد {os.path.basename(folder)} لا يحتوي على صور.")
+                    st.warning(f"⚠ المجلد {os.path.basename(folder)} لا يحتوي على صور، تم تجاوزه.")
                     continue
 
-                # نسخ الشريحة الأولى
-                template_slide = prs.slides[0]
-                slide = prs.slides.add_slide(template_slide.slide_layout)
+                if slide_index >= slide_count:
+                    break
 
-                # تعيين عنوان الشريحة
-                for shape in slide.shapes:
-                    if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.TITLE:
-                        shape.text = os.path.basename(folder)
+                slide = prs.slides[slide_index]
 
-                # استبدال الصور في الـ placeholders
+                # وضع عنوان الشريحة من اسم المجلد
+                title_shapes = [shape for shape in slide.shapes if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.TITLE]
+                if title_shapes:
+                    title_shapes[0].text = os.path.basename(folder)
+
                 img_idx = 0
                 for shape in slide.shapes:
+                    # استبدال في placeholder
                     if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
-                        if img_idx < len(images):
-                            pic = images[img_idx]
-                            left, top, width, height = shape.left, shape.top, shape.width, shape.height
-                            sp = slide.shapes.add_picture(pic, left, top, width, height)
-                            slide.shapes._spTree.remove(shape._element)  # إزالة القديم
-                            img_idx += 1
+                        with open(os.path.join(folder, images[img_idx % len(images)]), "rb") as img_file:
+                            shape.insert_picture(img_file)
+                        replaced_count += 1
+                        img_idx += 1
+
+                    # استبدال الصور العادية
+                    elif shape.shape_type == 13:  # 13 = Picture
+                        left, top, width, height = shape.left, shape.top, shape.width, shape.height
+                        slide.shapes._spTree.remove(shape._element)
+                        with open(os.path.join(folder, images[img_idx % len(images)]), "rb") as img_file:
+                            pic = slide.shapes.add_picture(img_file, left, top, width, height)
+                        replaced_count += 1
+                        img_idx += 1
 
                 slide_index += 1
-                st.write(f"✅ تم إنشاء الشريحة {slide_index} بعنوان {os.path.basename(folder)}")
 
-            if slide_index == 0:
-                st.error("❌ لم يتم إنشاء أي شريحة جديدة. تحقق من أن الملف يحتوي على placeholders للصور.")
+            if replaced_count == 0:
+                st.error("❌ لم يتم العثور على أي صور أو Placeholders في العرض التقديمي.")
                 st.stop()
 
-            # حفظ الملف المعدل
-            output_filename = uploaded_pptx.name.replace(".pptx", "_Modified.pptx")
-            output_path = os.path.join(tmpdir, output_filename)
+            # حفظ الملف الجديد بنفس الاسم + _Modified
+            original_name = os.path.splitext(uploaded_pptx.name)[0]
+            output_filename = f"{original_name}_Modified.pptx"
+            output_path = os.path.join(".", output_filename)
             prs.save(output_path)
 
-            # تنزيل الملف
             with open(output_path, "rb") as f:
-                st.download_button("📥 تحميل العرض المعدل", f, file_name=output_filename)
+                st.success(f"✅ تم استبدال {replaced_count} صورة بنجاح!")
+                st.download_button("⬇ تحميل الملف المعدل", f, file_name=output_filename)
 
-            status.update(label="✅ تم الانتهاء من المعالجة", state="complete")
+        except Exception as e:
+            st.error(f"❌ خطأ أثناء المعالجة: {e}")
