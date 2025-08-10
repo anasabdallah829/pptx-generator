@@ -43,6 +43,13 @@ uploaded_zip = st.file_uploader("🗜️ اختر ملف ZIP يحتوي على �
 show_details = st.checkbox("عرض التفاصيل المفصلة", value=False)
 
 
+def remove_slide(prs, slide):
+    """
+    حذف شريحة من العرض التقديمي.
+    """
+    r_id = prs.slides._sldIdLst.index(slide.slide_id)
+    prs.slides._sldIdLst.remove(slide.slide_id)
+
 def analyze_first_slide(prs):
     """
     تحليل الشريحة الأولى: إرجاع نتائج حتى لو لم توجد مواضع للصور.
@@ -225,7 +232,6 @@ def main():
                     if len(imgs) != len(image_positions):
                         mismatch_folders.append((os.path.basename(fp), len(imgs), len(image_positions)))
                 
-                # Check if mismatch_action is already set in session state
                 if mismatch_folders and 'mismatch_action' not in st.session_state:
                     with st.form("mismatch_form"):
                         st.warning("⚠ تم اكتشاف اختلاف في عدد الصور لبعض المجلدات مقارنة بعدد مواضع الصور في الشريحة الأولى.")
@@ -245,14 +251,13 @@ def main():
                         elif choice_text.startswith("تكرار"): st.session_state['mismatch_action'] = 'repeat'
                         elif choice_text.startswith("تخطي"): st.session_state['mismatch_action'] = 'skip_folder'
                         else: st.session_state['mismatch_action'] = 'stop'
-                        # Note: No rerun needed here, the main loop will continue
                     else:
                         st.stop()
                 
                 if 'mismatch_action' in st.session_state:
                     mismatch_action = st.session_state['mismatch_action']
                 else:
-                    mismatch_action = 'truncate' # Default action if no mismatch is found
+                    mismatch_action = 'truncate'
 
                 if mismatch_action == 'stop':
                     st.error("❌ تم إيقاف العملية بناءً على اختيار المستخدم.")
@@ -260,8 +265,8 @@ def main():
 
                 st.info("🗑️ جاري حذف الشرائح الموجودة...")
                 while prs.slides:
-                    slide_id = prs.slides[0].slide_id
-                    prs.part.delete_slide(slide_id)
+                    slide = prs.slides[0]
+                    remove_slide(prs, slide)
                 st.success("✅ تم حذف جميع الشرائح القديمة.")
                 
                 st.info("🔄 جاري إنشاء الشرائح الجديدة...")
