@@ -6,7 +6,7 @@ from pptx import Presentation
 from pptx.enum.shapes import PP_PLACEHOLDER
 import shutil
 from pptx.util import Inches
-from pptx.enum.shapes import MSO_SHAPE as types_MSO_SHAPE
+import random
 
 # إعداد صفحة Streamlit
 st.set_page_config(page_title="PowerPoint Image Replacer", layout="centered")
@@ -16,6 +16,14 @@ st.markdown("---")
 # واجهة المستخدم لرفع الملفات
 uploaded_pptx = st.file_uploader("📂 اختر ملف PowerPoint (.pptx)", type=["pptx"], key="pptx_uploader")
 uploaded_zip = st.file_uploader("🗜️ اختر ملف ZIP يحتوي على مجلدات صور", type=["zip"], key="zip_uploader")
+
+# خيارات جديدة
+st.markdown("### ⚙️ إعدادات المعالجة")
+image_order_option = st.radio(
+    "كيف تريد ترتيب الصور في الشرائح؟",
+    ("بالترتيب (افتراضي)", "عشوائي"),
+    index=0
+)
 
 # خيار عرض التفاصيل
 show_details = st.checkbox("عرض التفاصيل المفصلة", value=False)
@@ -30,8 +38,7 @@ def analyze_first_slide(prs):
 
     first_slide = prs.slides[0]
     
-    # تحديد أنواع الأشكال التي يمكن اعتبارها صورًا
-    PICTURE_SHAPE_TYPES = (13, 21) # MSO_SHAPE.PICTURE و MSO_AUTO_SHAPE_TYPE.PICTURE
+    PICTURE_SHAPE_TYPES = (13, 21)
     
     picture_placeholders = [
         shape for shape in first_slide.shapes
@@ -65,7 +72,6 @@ def get_image_shapes(slide):
         elif hasattr(shape, 'shape_type') and shape.shape_type in PICTURE_SHAPE_TYPES:
             image_shapes.append(shape)
             
-    # ترتيب الأشكال حسب موضعها في الشريحة (من الأعلى إلى الأسفل، ثم من اليسار إلى اليمين)
     image_shapes.sort(key=lambda s: (s.top, s.left))
     return image_shapes
 
@@ -118,11 +124,9 @@ def main():
                 
                 if not template_image_shapes:
                     st.warning("⚠ الشريحة الأولى لا تحتوي على مواضع صور. سيتم إضافة الصورة الأولى من كل مجلد فقط.")
-                    # هنا نستخدم تخطيط شريحة فارغ
                     slide_layout = prs.slide_layouts[6]
                 else:
                     slide_layout = analysis_result['slide_layout']
-
 
                 mismatch_folders = []
                 for fp in folder_paths:
@@ -172,25 +176,29 @@ def main():
                     folder_name = os.path.basename(folder_path)
                     status_text.text(f"🔄 معالجة المجلد {folder_idx + 1}/{len(folder_paths)}: {folder_name}")
 
-                    imgs = sorted([f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp'))])
+                    imgs = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp'))]
+                    
                     if not imgs:
                         if show_details:
                             st.warning(f"⚠ المجلد {folder_name} فارغ من الصور، سيتم تخطيه.")
                         continue
+                    
+                    # ترتيب الصور بناءً على اختيار المستخدم
+                    if image_order_option == "عشوائي":
+                        random.shuffle(imgs)
+                    else:
+                        imgs.sort()
 
                     if mismatch_action == 'skip_folder' and len(imgs) != len(template_image_shapes):
                         if show_details:
                             st.info(f"ℹ تم تخطي المجلد {folder_name} لوجود اختلاف في عدد الصور.")
                         continue
 
-                    # إنشاء شريحة جديدة بناءً على التخطيط الأصلي
                     new_slide = prs.slides.add_slide(slide_layout)
                     created_slides += 1
                     
-                    # استخراج أشكال الصور من الشريحة الجديدة بنفس الترتيب
                     new_image_shapes = get_image_shapes(new_slide)
                     
-                    # استبدال الصور
                     replaced_count = 0
                     for i, new_shape in enumerate(new_image_shapes):
                         if mismatch_action == 'truncate' and i >= len(imgs):
@@ -203,19 +211,15 @@ def main():
                             new_shape.insert_picture(image_path)
                             replaced_count += 1
                         except AttributeError:
-                            # في حال كان الشكل ليس placeholder، نقوم بإضافة صورة جديدة
-                            # مع الحفاظ على موقعه وحجمه
-                            new_slide.shapes.add_picture(
-                                image_path, new_shape.left, new_shape.top,
-                                new_shape.width, new_shape.height
-                            )
-                            # إزالة الشكل القديم
+                            left, top, width, height = new_shape.left, new_shape.top, new_shape.width, new_shape.height
                             new_shape.element.getparent().remove(new_shape.element)
+                            new_slide.shapes.add_picture(
+                                image_path, left, top, width, height
+                            )
                             replaced_count += 1
                             
                     total_replaced += replaced_count
                     
-                    # إضافة عنوان الشريحة
                     try:
                         title_shapes = [shape for shape in new_slide.shapes
                                         if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.TITLE]
