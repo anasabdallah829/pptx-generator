@@ -8,33 +8,125 @@ import shutil
 from pptx.util import Inches
 import random
 
-# إعداد صفحة Streamlit
-st.set_page_config(page_title="PowerPoint Image Replacer", layout="centered")
-st.title("🔄 PowerPoint Image & Placeholder Replacer")
+# Set Streamlit page configuration
+st.set_page_config(page_title="Slide-Sync-Images", layout="centered", initial_sidebar_state="expanded")
+
+# Custom CSS for a modern, elegant design
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #f0f2f6;
+        color: #1a1a1a;
+    }
+    .main-header {
+        text-align: center;
+        font-size: 2.5em;
+        font-weight: 700;
+        color: #004d99;
+        margin-bottom: 0.5em;
+    }
+    .sub-header {
+        text-align: center;
+        font-size: 1.2em;
+        color: #666;
+        margin-bottom: 2em;
+    }
+    .st-emotion-cache-1kyx11f {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+    }
+    .stButton>button {
+        background-color: #004d99;
+        color: white;
+        border-radius: 8px;
+        border: none;
+        padding: 12px 24px;
+        font-size: 1.1em;
+        transition: background-color 0.3s;
+    }
+    .stButton>button:hover {
+        background-color: #003366;
+    }
+    .st-emotion-cache-1g88h6 {
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e0e0e0;
+    }
+    .st-emotion-cache-163m3e9 {
+        padding: 1rem 1rem 1rem 1rem;
+    }
+    .st-emotion-cache-1kyx11f > div:first-child > h3 {
+        color: #004d99;
+        font-weight: 600;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+    }
+    .metric-container {
+        padding: 15px;
+        border-radius: 8px;
+        background-color: #e6f7ff;
+        border: 1px solid #b3e0ff;
+        text-align: center;
+    }
+    .metric-label {
+        font-size: 1em;
+        color: #333;
+        font-weight: 600;
+    }
+    .metric-value {
+        font-size: 1.8em;
+        font-weight: 700;
+        color: #004d99;
+    }
+    .sidebar-header {
+        color: #004d99;
+        font-weight: 600;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+    }
+    .st-emotion-cache-v063l {
+      text-align: right;
+    }
+    .st-emotion-cache-h601 {
+      direction: rtl;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- App Header and Description ---
+st.markdown('<h1 class="main-header">🔄 Slide-Sync-Images</h1>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">أداة سهلة وسريعة لإنشاء شرائح PowerPoint جديدة من قالب ومجلدات صور.</p>', unsafe_allow_html=True)
+
+# --- Main Interface ---
+
+st.subheader("📂 تحميل الملفات")
+uploaded_pptx = st.file_uploader("اختر ملف PowerPoint للقالب (.pptx)", type=["pptx"], key="pptx_uploader")
+uploaded_zip = st.file_uploader("اختر ملف ZIP يحتوي على مجلدات الصور", type=["zip"], key="zip_uploader")
+
 st.markdown("---")
 
-# واجهة المستخدم لرفع الملفات
-uploaded_pptx = st.file_uploader("📂 اختر ملف PowerPoint (.pptx)", type=["pptx"], key="pptx_uploader")
-uploaded_zip = st.file_uploader("🗜️ اختر ملف ZIP يحتوي على مجلدات صور", type=["zip"], key="zip_uploader")
-
-# خيارات جديدة
-st.markdown("### ⚙️ إعدادات المعالجة")
+st.subheader("⚙️ إعدادات المعالجة")
 image_order_option = st.radio(
     "كيف تريد ترتيب الصور في الشرائح؟",
     ("بالترتيب (افتراضي)", "عشوائي"),
     index=0
 )
 
-# خيار عرض التفاصيل
 show_details = st.checkbox("عرض التفاصيل المفصلة", value=False)
 
+st.markdown("---")
 
 def analyze_first_slide(prs):
     """
     تحليل الشريحة الأولى: إرجاع نتائج حتى لو لم توجد مواضع للصور.
     """
     if len(prs.slides) == 0:
-        return False, "لا توجد شرائح في الملف"
+        return False, "لا توجد شرائح في الملف."
 
     first_slide = prs.slides[0]
     
@@ -61,7 +153,7 @@ def analyze_first_slide(prs):
 
 def get_image_shapes(slide):
     """
-    استخراج جميع أشكال الصور من الشريحة، سواء كانت placeholders أو صور عادية.
+    استخراج وترتيب جميع أشكال الصور من الشريحة، سواء كانت placeholders أو صور عادية.
     """
     PICTURE_SHAPE_TYPES = (13, 21)
     
@@ -81,49 +173,51 @@ def main():
         if "process_started" not in st.session_state:
             st.session_state.process_started = False
 
-        if st.button("🚀 بدء المعالجة") or st.session_state.process_started:
+        if st.button("🚀 بدء المعالجة", use_container_width=True) or st.session_state.process_started:
             st.session_state.process_started = True
             
             temp_dir = None
             try:
-                st.info("📦 جاري فحص الملفات...")
-                zip_bytes = io.BytesIO(uploaded_zip.read())
-                with zipfile.ZipFile(zip_bytes, "r") as zip_ref:
-                    temp_dir = "temp_images"
-                    if os.path.exists(temp_dir):
-                        shutil.rmtree(temp_dir)
-                    os.makedirs(temp_dir)
-                    zip_ref.extractall(temp_dir)
-                
-                all_items = os.listdir(temp_dir)
-                folder_paths = [os.path.join(temp_dir, item) for item in all_items if os.path.isdir(os.path.join(temp_dir, item))]
+                with st.spinner("📦 جاري فحص واستخراج الملفات..."):
+                    zip_bytes = io.BytesIO(uploaded_zip.read())
+                    with zipfile.ZipFile(zip_bytes, "r") as zip_ref:
+                        temp_dir = "temp_images"
+                        if os.path.exists(temp_dir):
+                            shutil.rmtree(temp_dir)
+                        os.makedirs(temp_dir)
+                        zip_ref.extractall(temp_dir)
+                    
+                    all_items = os.listdir(temp_dir)
+                    folder_paths = [os.path.join(temp_dir, item) for item in all_items if os.path.isdir(os.path.join(temp_dir, item))]
                 
                 if not folder_paths:
-                    st.error("❌ لا توجد مجلدات في الملف المضغوط.")
+                    st.error("❌ ملف ZIP لا يحتوي على أي مجلدات صور.")
                     st.stop()
                 
                 folder_paths.sort()
-                st.success(f"✅ تم العثور على {len(folder_paths)} مجلد يحتوي على صور")
+                st.success(f"✅ تم العثور على **{len(folder_paths)}** مجلد صور للمعالجة.")
 
                 prs = Presentation(io.BytesIO(uploaded_pptx.read()))
                 
                 st.info("🔍 جاري تحليل الشريحة الأولى...")
                 ok, analysis_result = analyze_first_slide(prs)
                 if not ok:
-                    st.error(f"❌ {analysis_result}")
+                    st.error(f"❌ خطأ: {analysis_result}")
                     st.stop()
                 
-                st.success("✅ تحليل الشريحة الأولى جاهز")
+                st.success("✅ تم الانتهاء من تحليل القالب.")
                 col1, col2, col3 = st.columns(3)
-                with col1: st.metric("Placeholders للصور", analysis_result['placeholders'])
-                with col2: st.metric("الصور العادية", analysis_result['regular_pictures'])
-                with col3: st.metric("إجمالي أماكن الصور", analysis_result['total_slots'])
+                with col1: st.markdown(f'<div class="metric-container"><div class="metric-label">عدد placeholders</div><div class="metric-value">{analysis_result["placeholders"]}</div></div>', unsafe_allow_html=True)
+                with col2: st.markdown(f'<div class="metric-container"><div class="metric-label">عدد الصور العادية</div><div class="metric-value">{analysis_result["regular_pictures"]}</div></div>', unsafe_allow_html=True)
+                with col3: st.markdown(f'<div class="metric-container"><div class="metric-label">إجمالي أماكن الصور</div><div class="metric-value">{analysis_result["total_slots"]}</div></div>', unsafe_allow_html=True)
+                
+                st.markdown("---")
                 
                 first_slide = prs.slides[0]
                 template_image_shapes = get_image_shapes(first_slide)
                 
                 if not template_image_shapes:
-                    st.warning("⚠ الشريحة الأولى لا تحتوي على مواضع صور. سيتم إضافة الصورة الأولى من كل مجلد فقط.")
+                    st.warning("⚠ لا توجد أماكن للصور في القالب. سيتم إضافة صورة واحدة لكل شريحة.")
                     slide_layout = prs.slide_layouts[6]
                 else:
                     slide_layout = analysis_result['slide_layout']
@@ -136,23 +230,25 @@ def main():
                 
                 if mismatch_folders and 'mismatch_action' not in st.session_state:
                     with st.form("mismatch_form"):
-                        st.warning("⚠ تم اكتشاف اختلاف في عدد الصور لبعض المجلدات مقارنة بعدد مواضع الصور في الشريحة الأولى.")
+                        st.warning("⚠️ تم اكتشاف اختلاف في عدد الصور لبعض المجلدات مقارنة بأماكن الصور في القالب.")
                         for name, img_count, _ in mismatch_folders:
                             st.write(f"- المجلد `{name}` يحتوي على {img_count} صورة.")
-                        st.markdown(f"**عدد مواضع الصور في القالب: {len(template_image_shapes)}**")
+                        st.markdown(f"**عدد أماكن الصور في القالب: {len(template_image_shapes)}**")
 
                         choice_text = st.radio(
                             "اختر كيف تريد التعامل مع المجلدات التي يختلف عدد صورها:",
-                            ("استبدال فقط حتى أقل عدد (truncate)", "تكرار الصور لملء جميع المواضع (repeat)", "تخطي المجلدات ذات الاختلاف (skip_folder)", "إيقاف العملية (stop)"),
+                            ("اقتصاص (استبدال فقط حتى أقل عدد)", "تكرار (ملء كل الأماكن بتكرار الصور)", "تخطي (تجاهل المجلدات التي بها اختلاف)", "إيقاف (إلغاء العملية بالكامل)"),
                             index=0
                         )
-                        submit_choice = st.form_submit_button("✅ تأكيد الاختيار والمتابعة")
+                        submit_choice = st.form_submit_button("✅ تأكيد المتابعة")
 
                     if submit_choice:
-                        if choice_text.startswith("استبدال فقط"): st.session_state['mismatch_action'] = 'truncate'
-                        elif choice_text.startswith("تكرار"): st.session_state['mismatch_action'] = 'repeat'
-                        elif choice_text.startswith("تخطي"): st.session_state['mismatch_action'] = 'skip_folder'
-                        else: st.session_state['mismatch_action'] = 'stop'
+                        st.session_state['mismatch_action'] = {
+                            "اقتصاص (استبدال فقط حتى أقل عدد)": 'truncate',
+                            "تكرار (ملء كل الأماكن بتكرار الصور)": 'repeat',
+                            "تخطي (تجاهل المجلدات التي بها اختلاف)": 'skip_folder',
+                            "إيقاف (إلغاء العملية بالكامل)": 'stop'
+                        }.get(choice_text)
                     else:
                         st.stop()
                 
@@ -162,10 +258,10 @@ def main():
                     mismatch_action = 'truncate'
 
                 if mismatch_action == 'stop':
-                    st.error("❌ تم إيقاف العملية بناءً على اختيار المستخدم.")
+                    st.error("❌ تم إلغاء العملية بناءً على اختيارك.")
                     st.stop()
 
-                st.info("🔄 جاري إضافة الشرائح الجديدة...")
+                st.info("🔄 جاري إنشاء الشرائح الجديدة...")
                 total_replaced = 0
                 created_slides = 0
 
@@ -174,16 +270,15 @@ def main():
 
                 for folder_idx, folder_path in enumerate(folder_paths):
                     folder_name = os.path.basename(folder_path)
-                    status_text.text(f"🔄 معالجة المجلد {folder_idx + 1}/{len(folder_paths)}: {folder_name}")
+                    status_text.text(f"جاري معالجة المجلد {folder_idx + 1}/{len(folder_paths)}: **{folder_name}**")
 
                     imgs = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp'))]
                     
                     if not imgs:
                         if show_details:
-                            st.warning(f"⚠ المجلد {folder_name} فارغ من الصور، سيتم تخطيه.")
+                            st.warning(f"⚠ المجلد '{folder_name}' فارغ من الصور. تم التخطي.")
                         continue
                     
-                    # ترتيب الصور بناءً على اختيار المستخدم
                     if image_order_option == "عشوائي":
                         random.shuffle(imgs)
                     else:
@@ -191,7 +286,7 @@ def main():
 
                     if mismatch_action == 'skip_folder' and len(imgs) != len(template_image_shapes):
                         if show_details:
-                            st.info(f"ℹ تم تخطي المجلد {folder_name} لوجود اختلاف في عدد الصور.")
+                            st.info(f"ℹ تم تخطي المجلد '{folder_name}' بسبب اختلاف عدد الصور.")
                         continue
 
                     new_slide = prs.slides.add_slide(slide_layout)
@@ -233,24 +328,24 @@ def main():
                         pass
                     
                     if show_details:
-                        st.success(f"✅ تم إنشاء شريحة للمجلد '{folder_name}' واستبدال {replaced_count} صورة")
+                        st.success(f"✅ تم إنشاء شريحة للمجلد '{folder_name}' واستبدال {replaced_count} صورة.")
 
                     progress_bar.progress((folder_idx + 1) / len(folder_paths))
 
                 progress_bar.empty()
                 status_text.empty()
-
-                st.success("🎉 تم الانتهاء من المعالجة!")
-                if 'mismatch_action' in st.session_state: del st.session_state['mismatch_action']
-                if 'process_started' in st.session_state: del st.session_state['process_started']
-
+                
+                st.markdown("---")
+                st.success("🎉 **تم الانتهاء من المعالجة بنجاح!**")
+                
                 col1, col2, col3 = st.columns(3)
-                with col1: st.metric("الشرائح المُضافة", created_slides)
-                with col2: st.metric("الصور المُستبدلة", total_replaced)
-                with col3: st.metric("المجلدات المُعالجة", len(folder_paths))
+                with col1: st.markdown(f'<div class="metric-container"><div class="metric-label">الشرائح المضافة</div><div class="metric-value">{created_slides}</div></div>', unsafe_allow_html=True)
+                with col2: st.markdown(f'<div class="metric-container"><div class="metric-label">الصور المستبدلة</div><div class="metric-value">{total_replaced}</div></div>', unsafe_allow_html=True)
+                with col3: st.markdown(f'<div class="metric-container"><div class="metric-label">المجلدات التي تمت معالجتها</div><div class="metric-value">{len(folder_paths)}</div></div>', unsafe_allow_html=True)
+
 
                 if created_slides == 0:
-                    st.error("❌ لم يتم إضافة أي شرائح.")
+                    st.error("❌ لم يتم إضافة أي شرائح إلى العرض التقديمي.")
                     st.stop()
 
                 original_name = os.path.splitext(uploaded_pptx.name)[0]
@@ -259,18 +354,16 @@ def main():
                 prs.save(output_buffer)
                 output_buffer.seek(0)
 
-                st.success(f"✅ تم إنشاء ملف PowerPoint جديد بـ {created_slides} شريحة!")
-
                 st.download_button(
-                    label="⬇️ تحميل الملف المُحدث",
+                    label="⬇️ تحميل العرض التقديمي المحدث",
                     data=output_buffer.getvalue(),
                     file_name=output_filename,
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                    key="download_button"
+                    use_container_width=True
                 )
 
             except Exception as e:
-                st.error(f"❌ خطأ أثناء المعالجة: {e}")
+                st.error(f"❌ حدث خطأ أثناء المعالجة: {e}")
                 if show_details:
                     import traceback
                     st.error(f"تفاصيل الخطأ: {traceback.format_exc()}")
@@ -278,25 +371,19 @@ def main():
                 if temp_dir and os.path.exists(temp_dir):
                     shutil.rmtree(temp_dir)
     else:
-        st.info("📋 يُرجى رفع ملف PowerPoint وملف ZIP للبدء")
+        st.info("👋 مرحباً! قم بتحميل ملف PowerPoint والقالب المضغوط للبدء.")
+        
+        st.sidebar.markdown('<h3 class="sidebar-header">📖 تعليمات</h3>', unsafe_allow_html=True)
+        st.sidebar.markdown("""
+        **1. ملف PowerPoint (.pptx):**
+        - يجب أن يحتوي على شريحة واحدة على الأقل.
+        - سيتم استخدام الشريحة الأولى كقالب.
 
-        with st.expander("📖 تعليمات الاستخدام"):
-            st.markdown("""
-            ### كيفية استخدام التطبيق:
+        **2. ملف ZIP:**
+        - يجب أن يحتوي على مجلدات، وكل مجلد يضم الصور المخصصة لشريحة واحدة.
+        - سيتم استخدام أسماء المجلدات كعناوين للشرائح.
+        """)
 
-            1.  **ملف PowerPoint (.pptx):**
-                - يجب أن يحتوي على شريحة واحدة على الأقل.
-                - يتم استخدام تنسيق الشريحة الأولى كقالب.
 
-            2.  **ملف ZIP:**
-                - يجب أن يحتوي على مجلدات، وكل مجلد يحتوي على صور.
-                - أسماء المجلدات ستصبح عناوين الشرائح.
-
-            3.  **النتيجة:**
-                - شريحة منفصلة لكل مجلد.
-                - يتم استبدال الصور و placeholders في القالب بصور من المجلدات.
-                - في حال عدم وجود مواضع للصور في القالب، تُضاف الصورة الأولى من كل مجلد.
-            """)
-            
 if __name__ == '__main__':
     main()
