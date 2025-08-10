@@ -7,7 +7,6 @@ from pptx.enum.shapes import PP_PLACEHOLDER
 import shutil
 from pptx.util import Inches
 from pptx.enum.shapes import MSO_SHAPE as types_MSO_SHAPE
-from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
 
 # تحديد نوع الشكل المراد استخدامه
 PICTURE_SHAPE_TYPE = None
@@ -289,11 +288,23 @@ def main():
 
                     # إضافة placeholders يدويًا إلى الشريحة الجديدة
                     for pos in template_positions:
-                        new_slide.shapes.add_picture(
-                            os.path.join(folder_path, imgs[template_positions.index(pos) % len(imgs)]),
-                            pos['left'], pos['top'], pos['width'], pos['height']
-                        )
-                    
+                        # هنا نستخدم الطريقة المضمونة للحفاظ على التنسيقات
+                        # عبر إضافة placeholder ثم استبدال صورته
+                        
+                        # نجد الـ placeholder المناسب في الشريحة الجديدة
+                        # (لأنه تم إنشاؤه بناءً على التخطيط الأصلي)
+                        
+                        placeholder_shape = None
+                        for shape in new_slide.shapes:
+                            if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
+                                placeholder_shape = shape
+                                break
+                        
+                        if placeholder_shape:
+                            # الآن نستخدم insert_picture على الـ placeholder
+                            image_path = os.path.join(folder_path, imgs[template_positions.index(pos) % len(imgs)])
+                            placeholder_shape.insert_picture(image_path)
+                            
                     # استبدال الصور في الشريحة الجديدة
                     replaced_count = len(template_positions)
                     
