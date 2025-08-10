@@ -1,78 +1,47 @@
-import streamlit as st
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
-from pptx.util import Inches
-import zipfile
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
 import os
-import tempfile
-import shutil
-from io import BytesIO
 
-st.set_page_config(page_title="📸 PPTX Image Slide Generator", layout="centered")
-st.title("📸 PowerPoint Generator from Images")
+def generate_pptx_from_template(template_path, folders_path, output_path):
+    prs_template = Presentation(template_path)
+    base_slide = prs_template.slides[0]
 
-pptx_file = st.file_uploader("Upload PowerPoint Template (.pptx)", type=["pptx"])
-zip_file = st.file_uploader("Upload ZIP of Folders with Images", type=["zip"])
+    # Get positions of images in the template
+    image_shapes = [shape for shape in base_slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    image_positions = [(shape.left, shape.top, shape.height) for shape in image_shapes]
 
-if pptx_file and zip_file and st.button("Generate PowerPoint"):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Save uploaded files
-        pptx_path = os.path.join(tmpdir, "template.pptx")
-        with open(pptx_path, "wb") as f:
-            f.write(pptx_file.read())
+    # Create new presentation
+    prs = Presentation()
+    prs.slide_width = prs_template.slide_width
+    prs.slide_height = prs_template.slide_height
 
-        zip_path = os.path.join(tmpdir, "images.zip")
-        with open(zip_path, "wb") as f:
-            f.write(zip_file.read())
+    folders = sorted([f for f in os.listdir(folders_path) if os.path.isdir(os.path.join(folders_path, f))])
 
-        # Unzip images
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(os.path.join(tmpdir, "images"))
+    for folder in folders:
+        images = sorted([
+            os.path.join(folders_path, folder, f)
+            for f in os.listdir(os.path.join(folders_path, folder))
+            if f.lower().endswith((".jpg", ".jpeg", ".png"))
+        ])
 
-        # Load template
-        prs = Presentation(pptx_path)
-        base_slide = prs.slides[0]
-        base_shapes = list(base_slide.shapes)
+        slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank layout
 
-        # Create new presentation
-        final_prs = Presentation()
-        final_prs.slide_width = prs.slide_width
-        final_prs.slide_height = prs.slide_height
+        # Add title (folder name)
+        title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(9), Inches(1))
+        text_frame = title_box.text_frame
+        p = text_frame.paragraphs[0]
+        run = p.add_run()
+        run.text = folder
+        font = run.font
+        font.size = Pt(28)
+        font.bold = True
+        font.color.rgb = RGBColor(0, 0, 128)
 
-        # Process folders
-        image_base_path = os.path.join(tmpdir, "images")
-        folders = sorted([f for f in os.listdir(image_base_path) if os.path.isdir(os.path.join(image_base_path, f))])
+        # Insert images
+        for idx, (left, top, height) in enumerate(image_positions):
+            if idx < len(images):
+                slide.shapes.add_picture(images[idx], left, top, height=height)
 
-        for folder in folders:
-            folder_path = os.path.join(image_base_path, folder)
-            images = sorted([
-                os.path.join(folder_path, f)
-                for f in os.listdir(folder_path)
-                if f.lower().endswith((".png", ".jpg", ".jpeg"))
-            ])
-
-            # Create slide with same layout
-            layout = prs.slide_layouts[0]
-            slide = final_prs.slides.add_slide(layout)
-
-            img_idx = 0
-            for shape in base_shapes:
-                # Replace text placeholder (title)
-                if shape.has_text_frame and "title" in shape.name.lower():
-                    new_shape = slide.shapes.title
-                    if new_shape:
-                        new_shape.text = folder
-                # Copy textboxes or images
-                elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE and img_idx < len(images):
-                    slide.shapes.add_picture(images[img_idx], shape.left, shape.top, height=shape.height)
-                    img_idx += 1
-                elif shape.shape_type != MSO_SHAPE_TYPE.PICTURE and not shape.has_text_frame:
-                    new_shape = slide.shapes._spTree.insert_element_before(shape.element, 'p:extLst')
-
-        # Output
-        output = BytesIO()
-        final_prs.save(output)
-        output.seek(0)
-
-        st.success("✅ Done! Download your customized PowerPoint:")
-        st.download_button("📥 Download Final PPTX", output, file_name="generated_presentation.pptx")
+    prs.save(output_path)
