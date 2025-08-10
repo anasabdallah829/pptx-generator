@@ -85,7 +85,7 @@ def analyze_first_slide(prs):
     first_slide = prs.slides[0]
     picture_placeholders = [
         shape for shape in first_slide.shapes
-        if shape.is_placeholder and first_slide.shapes.get(shape.name).placeholder_format.type == PP_PLACEHOLDER.PICTURE
+        if shape.has_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE
     ]
     regular_pictures = [
         shape for shape in first_slide.shapes
@@ -107,7 +107,7 @@ def get_image_positions(slide):
     """
     positions = []
     for shape in slide.shapes:
-        if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
+        if shape.has_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
             positions.append({
                 'shape': shape, 'type': 'placeholder',
                 'left': shape.left, 'top': shape.top,
@@ -140,7 +140,7 @@ def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positi
     replaced_count = 0
     try:
         title_shapes = [shape for shape in slide.shapes
-                        if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.TITLE]
+                        if shape.has_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.TITLE]
         if title_shapes:
             title_shapes[0].text = folder_name
         else:
@@ -289,8 +289,10 @@ def main():
                     st.stop()
 
                 st.info("🗑️ جاري حذف الشرائح الموجودة...")
+                # استخدام طريقة مختلفة لحذف الشرائح
                 while len(prs.slides) > 0:
-                    delete_slide(prs, 0)
+                    slide = prs.slides[0]
+                    prs.slides.remove(slide)
                 st.success("✅ تم حذف جميع الشرائح القديمة.")
                 
                 st.info("🔄 جاري إنشاء الشرائح الجديدة...")
