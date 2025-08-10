@@ -7,6 +7,9 @@ from pptx.enum.shapes import PP_PLACEHOLDER
 import shutil
 from pptx.util import Inches
 from pptx.enum.shapes import MSO_SHAPE as types_MSO_SHAPE
+from pptx.oxml.shapes import SubElement, Element
+from pptx.oxml import parse_xml_bytes, OxmlElement
+from lxml.etree import QName, Element as LxmlElement, SubElement as LxmlSubElement
 
 # تحديد نوع الشكل المراد استخدامه
 PICTURE_SHAPE_TYPE = None
@@ -165,6 +168,43 @@ def replace_images_in_slide(slide, images_folder, folder_name, image_positions,
     return replaced_count, "تم بنجاح"
 
 
+def create_placeholder(slide, left, top, width, height, ph_idx):
+    """
+    إنشاء placeholder جديد يدويًا في الشريحة.
+    """
+    spTree = slide.shapes._spTree
+    
+    # create a new placeholder shape
+    ph_el = OxmlElement('p:ph')
+    ph_el.set('type', 'pic')  # for a picture placeholder
+    ph_el.set('idx', str(ph_idx))
+    
+    new_sp_el = OxmlElement('p:sp')
+    nvSpPr = SubElement(new_sp_el, 'p:nvSpPr')
+    cNvPr = SubElement(nvSpPr, 'p:cNvPr')
+    cNvPr.set('id', '1024')  # or another available ID
+    cNvPr.set('name', 'Picture Placeholder %d' % ph_idx)
+    cNvPr.append(ph_el)
+    
+    cNvSpPr = SubElement(nvSpPr, 'p:cNvSpPr')
+    
+    spPr = SubElement(new_sp_el, 'p:spPr')
+    xfrm = SubElement(spPr, 'a:xfrm')
+    off = SubElement(xfrm, 'a:off')
+    off.set('x', str(left))
+    off.set('y', str(top))
+    ext = SubElement(xfrm, 'a:ext')
+    ext.set('cx', str(width))
+    ext.set('cy', str(height))
+
+    spTree.append(new_sp_el)
+    
+    # find the newly created shape and return it
+    for shape in slide.shapes:
+        if shape.is_placeholder and shape.placeholder_format.idx == ph_idx:
+            return shape
+    return None
+
 def main():
     if uploaded_pptx and uploaded_zip:
         if "process_started" not in st.session_state:
@@ -209,11 +249,9 @@ def main():
                 with col3: st.metric("إجمالي أماكن الصور", analysis_result['total_slots'])
 
                 first_slide = prs.slides[0]
-
-                # --- الخطوة الجديدة: تحويل الصور العادية إلى placeholders في الشريحة الأولى ---
-                st.info("🎨 جاري تحويل الصور العادية إلى placeholders في الشريحة الأولى (للحفاظ على التنسيقات)...")
                 
-                # قائمة بالصور العادية التي سيتم حذفها وإعادة إضافتها كـ placeholders
+                st.info("🎨 جاري تحويل الصور العادية إلى placeholders في الشريحة الأولى...")
+                
                 regular_pictures_to_convert = [
                     shape for shape in first_slide.shapes
                     if hasattr(shape, 'shape_type') and shape.shape_type == PICTURE_SHAPE_TYPE
@@ -227,16 +265,13 @@ def main():
                     first_slide.shapes._spTree.remove(pic.element)
                 
                 # إضافة placeholders في نفس المواقع
+                next_ph_idx = 1000  # استخدام فهرس كبير لتجنب التعارض
                 for (left, top, width, height) in pic_data:
-                    first_slide.shapes.add_placeholder(
-                        PP_PLACEHOLDER.PICTURE,
-                        left, top, width, height
-                    )
-                st.success("✅ تم تحويل جميع الصور العادية إلى placeholders بنجاح.")
-                # --- نهاية الخطوة الجديدة ---
+                    create_placeholder(first_slide, left, top, width, height, next_ph_idx)
+                    next_ph_idx += 1
                 
-                # إعادة تحليل الشريحة الأولى بعد التحويل
-                # هذا يضمن أن 'image_positions' يحتوي على placeholders فقط
+                st.success("✅ تم تحويل جميع الصور العادية إلى placeholders بنجاح.")
+                
                 image_positions = get_image_positions(first_slide)
                 
                 if analysis_result['total_slots'] == 0:
