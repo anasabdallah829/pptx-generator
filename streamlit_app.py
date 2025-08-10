@@ -89,8 +89,7 @@ def get_image_positions(slide):
     positions.sort(key=lambda x: (x['top'], x['left']))
     return positions
 
-
-def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positions,
+def replace_images_in_slide(slide, images_folder, folder_name, image_positions,
                             show_details=False, mismatch_action='truncate'):
     """
     استبدال الصور في الشريحة مع الحفاظ على المواقع والأحجام والتنسيقات.
@@ -123,7 +122,7 @@ def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positi
             image_filename = images[0]
             image_path = os.path.join(images_folder, image_filename)
             try:
-                slide.shapes.add_picture(image_path, 0, 0, prs.slide_width)
+                slide.shapes.add_picture(image_path, 0, 0, slide.slide_width)
                 replaced_count += 1
                 if show_details:
                     st.success(f"✅ تم إضافة صورة مملوءة للشريحة (لا توجد مواضع): {image_filename}")
@@ -210,6 +209,34 @@ def main():
                 with col3: st.metric("إجمالي أماكن الصور", analysis_result['total_slots'])
 
                 first_slide = prs.slides[0]
+
+                # --- الخطوة الجديدة: تحويل الصور العادية إلى placeholders في الشريحة الأولى ---
+                st.info("🎨 جاري تحويل الصور العادية إلى placeholders في الشريحة الأولى (للحفاظ على التنسيقات)...")
+                
+                # قائمة بالصور العادية التي سيتم حذفها وإعادة إضافتها كـ placeholders
+                regular_pictures_to_convert = [
+                    shape for shape in first_slide.shapes
+                    if hasattr(shape, 'shape_type') and shape.shape_type == PICTURE_SHAPE_TYPE
+                ]
+
+                # حفظ المواقع والأحجام
+                pic_data = [(pic.left, pic.top, pic.width, pic.height) for pic in regular_pictures_to_convert]
+
+                # حذف الصور العادية
+                for pic in regular_pictures_to_convert:
+                    first_slide.shapes._spTree.remove(pic.element)
+                
+                # إضافة placeholders في نفس المواقع
+                for (left, top, width, height) in pic_data:
+                    first_slide.shapes.add_placeholder(
+                        PP_PLACEHOLDER.PICTURE,
+                        left, top, width, height
+                    )
+                st.success("✅ تم تحويل جميع الصور العادية إلى placeholders بنجاح.")
+                # --- نهاية الخطوة الجديدة ---
+                
+                # إعادة تحليل الشريحة الأولى بعد التحويل
+                # هذا يضمن أن 'image_positions' يحتوي على placeholders فقط
                 image_positions = get_image_positions(first_slide)
                 
                 if analysis_result['total_slots'] == 0:
@@ -284,7 +311,7 @@ def main():
                     new_image_positions = get_image_positions(new_slide)
 
                     replaced_count, message = replace_images_in_slide(
-                        prs, new_slide, folder_path, folder_name, new_image_positions, show_details, mismatch_action
+                        new_slide, folder_path, folder_name, new_image_positions, show_details, mismatch_action
                     )
                     total_replaced += replaced_count
                     if show_details:
