@@ -14,9 +14,9 @@ IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".bmp")
 def replace_images_in_slide(slide, image_paths):
     """
     استبدال الصور والعناصر النائبة للصور في شريحة PowerPoint بقائمة من الصور الجديدة.
-    يتم التعامل مع أي صور موجودة في الشريحة واستبدالها حسب الترتيب.
     """
     img_index = 0
+    
     # قائمة بخصائص الصور (موضع وحجم) ليتم إضافتها لاحقًا
     image_replacements = []
 
@@ -24,7 +24,6 @@ def replace_images_in_slide(slide, image_paths):
         # التحقق إذا كان الشكل عبارة عن صورة عادية
         if shape.shape_type == MSO_SHAPE.PICTURE:
             if img_index < len(image_paths):
-                # تخزين خصائص الصورة القديمة
                 x, y, cx, cy = shape.left, shape.top, shape.width, shape.height
                 image_replacements.append({
                     "path": image_paths[img_index],
@@ -32,12 +31,11 @@ def replace_images_in_slide(slide, image_paths):
                     "size": (cx, cy)
                 })
                 img_index += 1
-                # حذف الصورة القديمة
                 slide.shapes._spTree.remove(shape._element)
+        
         # التحقق إذا كان الشكل عبارة عن عنصر نائب للصورة
         elif shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
             if img_index < len(image_paths):
-                # استخدام طريقة insert_picture للتعامل مع العناصر النائبة
                 shape.insert_picture(image_paths[img_index])
                 img_index += 1
 
@@ -104,7 +102,6 @@ def process_pptx(template_pptx, images_zip):
     finally:
         # تنظيف الملفات المؤقتة
         shutil.rmtree(temp_dir, ignore_errors=True)
-
 
 # ====== واجهة Streamlit ======
 st.title("📊 أداة استبدال الصور في PowerPoint")
