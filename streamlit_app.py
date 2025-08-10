@@ -78,6 +78,27 @@ def get_image_positions(slide):
     positions.sort(key=lambda x: (x['top'], x['left']))
     return positions
 
+def safe_delete_all_slides(prs):
+    """حذف جميع الشرائح بطريقة آمنة"""
+    try:
+        # طريقة محسنة لحذف الشرائح
+        slide_count = len(prs.slides)
+        
+        # حذف الشرائح من النهاية للبداية لتجنب مشاكل الفهرسة
+        for i in range(slide_count - 1, -1, -1):
+            try:
+                slide_id = prs.slides._sldIdLst[i]
+                prs.slides._sldIdLst.remove(slide_id)
+            except Exception as e:
+                if show_details:
+                    st.warning(f"تحذير في حذف الشريحة {i}: {e}")
+                continue
+        
+        return True, f"تم حذف {slide_count} شريحة"
+        
+    except Exception as e:
+        return False, f"خطأ في حذف الشرائح: {e}"
+
 def replace_images_in_slide(slide, images_folder, folder_name, image_positions, show_details=False):
     """استبدال الصور في الشريحة مع الحفاظ على المواقع والأحجام"""
     
@@ -220,24 +241,27 @@ if uploaded_pptx and uploaded_zip:
             # الحصول على مواقع الصور من الشريحة الأولى
             first_slide = prs.slides[0]
             image_positions = get_image_positions(first_slide)
+            slide_layout = analysis_result['slide_layout']
             
             if show_details:
                 st.info(f"📍 تم تحديد {len(image_positions)} موقع للصور في الشريحة الأولى")
             
-            # حذف جميع الشرائح الموجودة
+            # حذف جميع الشرائح الموجودة بطريقة آمنة
             st.info("🗑️ جاري حذف الشرائح الموجودة...")
-            slides_to_remove = list(prs.slides)
-            for slide in slides_to_remove:
-                rId = prs.slides._sldIdLst[prs.slides.index(slide)].rId
-                prs.part.drop_rel(rId)
-                del prs.slides._sldIdLst[prs.slides.index(slide)]
+            delete_success, delete_message = safe_delete_all_slides(prs)
+            
+            if not delete_success:
+                st.error(f"❌ فشل في حذف الشرائح: {delete_message}")
+                st.stop()
+            
+            if show_details:
+                st.success(f"✅ {delete_message}")
             
             # الخطوة 4: إنشاء شريحة لكل مجلد
             st.info("🔄 جاري إنشاء الشرائح الجديدة...")
             
             total_replaced = 0
             created_slides = 0
-            slide_layout = analysis_result['slide_layout']
             
             # شريط التقدم
             progress_bar = st.progress(0)
