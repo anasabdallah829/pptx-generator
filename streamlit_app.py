@@ -1,97 +1,99 @@
 import streamlit as st
-from pptx import Presentation
-from pptx.util import Inches
 import zipfile
 import os
 import tempfile
-import shutil
+from pptx import Presentation
+from pptx.enum.shapes import PP_PLACEHOLDER
+from pptx.util import Inches, Pt
+from io import BytesIO
 
-# ====== دالة لاستبدال الصور في الشريحة ======
-def replace_images_in_slide(slide, image_paths):
-    """
-    استبدال الصور في شريحة PowerPoint بقائمة من الصور الجديدة.
-    يتم التعامل مع أي صور موجودة في الشريحة واستبدالها حسب الترتيب.
-    """
-    img_index = 0
-    for shape in slide.shapes:
-        if shape.shape_type == 13:  # رقم 13 هو نوع الصورة في PPTX
-            if img_index < len(image_paths):
-                # حذف الصورة القديمة
-                x, y, cx, cy = shape.left, shape.top, shape.width, shape.height
-                slide.shapes._spTree.remove(shape._element)
-                # إدراج الصورة الجديدة
-                slide.shapes.add_picture(image_paths[img_index], x, y, cx, cy)
-                img_index += 1
+st.set_page_config(page_title="PowerPoint Image Replacer", page_icon="📊")
 
-# ====== الدالة الرئيسية للتطبيق ======
-def process_pptx(template_pptx, images_zip):
-    """
-    قراءة ملف PowerPoint وقائمة صور من ملف مضغوط، واستبدال الصور في كل شريحة.
-    """
-    # إنشاء مجلد مؤقت
-    temp_dir = tempfile.mkdtemp()
+st.title("📊 PowerPoint Image Replacer with Placeholders")
 
-    # حفظ الملفات المرفوعة في مجلد مؤقت
-    template_path = os.path.join(temp_dir, "template.pptx")
-    with open(template_path, "wb") as f:
-        f.write(template_pptx.getbuffer())
+uploaded_pptx = st.file_uploader("📂 ارفع ملف PowerPoint (.pptx)", type=["pptx"])
+uploaded_zip = st.file_uploader("🖼️ ارفع ملف الصور (.zip)", type=["zip"])
 
-    zip_path = os.path.join(temp_dir, "images.zip")
-    with open(zip_path, "wb") as f:
-        f.write(images_zip.getbuffer())
+if uploaded_pptx and uploaded_zip:
+    with st.status("⏳ جاري معالجة الملفات...", expanded=True) as status:
+        # إنشاء مجلد مؤقت
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pptx_path = os.path.join(tmpdir, uploaded_pptx.name)
+            zip_path = os.path.join(tmpdir, uploaded_zip.name)
 
-    # فك ضغط الصور
-    extract_path = os.path.join(temp_dir, "images")
-    os.makedirs(extract_path, exist_ok=True)
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(extract_path)
+            # حفظ الملفات
+            with open(pptx_path, "wb") as f:
+                f.write(uploaded_pptx.getbuffer())
+            with open(zip_path, "wb") as f:
+                f.write(uploaded_zip.getbuffer())
 
-    # تحميل البوربوينت
-    prs = Presentation(template_path)
+            # فك ضغط الصور
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(tmpdir)
 
-    # جلب المجلدات بالترتيب
-    folders = sorted(os.listdir(extract_path))
-    for i, folder in enumerate(folders):
-        folder_path = os.path.join(extract_path, folder)
-        if os.path.isdir(folder_path):
-            image_files = sorted([
-                os.path.join(folder_path, img)
-                for img in os.listdir(folder_path)
-                if img.lower().endswith((".png", ".jpg", ".jpeg"))
-            ])
-            if i < len(prs.slides):
-                replace_images_in_slide(prs.slides[i], image_files)
+            # قراءة مجلدات الصور
+            folders = [os.path.join(tmpdir, d) for d in os.listdir(tmpdir)
+                       if os.path.isdir(os.path.join(tmpdir, d))]
+            if not folders:
+                st.error("❌ ملف ZIP لا يحتوي على مجلدات صور!")
+                st.stop()
 
-    # حفظ النتيجة
-    output_path = os.path.join(temp_dir, "output.pptx")
-    prs.save(output_path)
+            # فتح العرض التقديمي
+            prs = Presentation(pptx_path)
 
-    # قراءة الملف الناتج وإرجاعه للتحميل
-    with open(output_path, "rb") as f:
-        pptx_bytes = f.read()
+            # إحصاء الـ placeholders
+            placeholder_count = 0
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
+                        placeholder_count += 1
 
-    shutil.rmtree(temp_dir)  # تنظيف الملفات المؤقتة
-    return pptx_bytes
+            st.write(f"📊 عدد الـ placeholders: {placeholder_count}")
 
+            # معالجة الشرائح
+            slide_index = 0
+            for folder in folders:
+                images = [os.path.join(folder, img) for img in os.listdir(folder)
+                          if img.lower().endswith((".png", ".jpg", ".jpeg"))]
 
-# ====== واجهة Streamlit ======
-st.title("📊 أداة استبدال الصور في PowerPoint")
+                if not images:
+                    st.warning(f"⚠️ المجلد {os.path.basename(folder)} لا يحتوي على صور.")
+                    continue
 
-template_pptx = st.file_uploader("ارفع قالب PowerPoint (.pptx)", type=["pptx"])
-images_zip = st.file_uploader("ارفع ملف الصور المضغوط (.zip)", type=["zip"])
+                # نسخ الشريحة الأولى
+                template_slide = prs.slides[0]
+                slide = prs.slides.add_slide(template_slide.slide_layout)
 
-if st.button("بدء المعالجة"):
-    if not template_pptx or not images_zip:
-        st.error("الرجاء رفع كل من ملف PowerPoint وملف الصور المضغوط.")
-    else:
-        try:
-            output_file = process_pptx(template_pptx, images_zip)
-            st.success("✅ تم استبدال الصور بنجاح!")
-            st.download_button(
-                label="📥 تحميل الملف الناتج",
-                data=output_file,
-                file_name="output.pptx",
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-            )
-        except Exception as e:
-            st.error(f"حدث خطأ أثناء المعالجة: {e}")
+                # تعيين عنوان الشريحة
+                for shape in slide.shapes:
+                    if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.TITLE:
+                        shape.text = os.path.basename(folder)
+
+                # استبدال الصور في الـ placeholders
+                img_idx = 0
+                for shape in slide.shapes:
+                    if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
+                        if img_idx < len(images):
+                            pic = images[img_idx]
+                            left, top, width, height = shape.left, shape.top, shape.width, shape.height
+                            sp = slide.shapes.add_picture(pic, left, top, width, height)
+                            slide.shapes._spTree.remove(shape._element)  # إزالة القديم
+                            img_idx += 1
+
+                slide_index += 1
+                st.write(f"✅ تم إنشاء الشريحة {slide_index} بعنوان {os.path.basename(folder)}")
+
+            if slide_index == 0:
+                st.error("❌ لم يتم إنشاء أي شريحة جديدة. تحقق من أن الملف يحتوي على placeholders للصور.")
+                st.stop()
+
+            # حفظ الملف المعدل
+            output_filename = uploaded_pptx.name.replace(".pptx", "_Modified.pptx")
+            output_path = os.path.join(tmpdir, output_filename)
+            prs.save(output_path)
+
+            # تنزيل الملف
+            with open(output_path, "rb") as f:
+                st.download_button("📥 تحميل العرض المعدل", f, file_name=output_filename)
+
+            status.update(label="✅ تم الانتهاء من المعالجة", state="complete")
