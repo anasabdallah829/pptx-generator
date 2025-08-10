@@ -7,9 +7,7 @@ from pptx.enum.shapes import PP_PLACEHOLDER
 import shutil
 from pptx.util import Inches
 from pptx.enum.shapes import MSO_SHAPE as types_MSO_SHAPE
-from pptx.oxml.shapes import SubElement, Element
-from pptx.oxml import parse_xml_bytes, OxmlElement
-from lxml.etree import QName, Element as LxmlElement, SubElement as LxmlSubElement
+from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
 
 # تحديد نوع الشكل المراد استخدامه
 PICTURE_SHAPE_TYPE = None
@@ -167,44 +165,6 @@ def replace_images_in_slide(slide, images_folder, folder_name, image_positions,
 
     return replaced_count, "تم بنجاح"
 
-
-def create_placeholder(slide, left, top, width, height, ph_idx):
-    """
-    إنشاء placeholder جديد يدويًا في الشريحة.
-    """
-    spTree = slide.shapes._spTree
-    
-    # create a new placeholder shape
-    ph_el = OxmlElement('p:ph')
-    ph_el.set('type', 'pic')  # for a picture placeholder
-    ph_el.set('idx', str(ph_idx))
-    
-    new_sp_el = OxmlElement('p:sp')
-    nvSpPr = SubElement(new_sp_el, 'p:nvSpPr')
-    cNvPr = SubElement(nvSpPr, 'p:cNvPr')
-    cNvPr.set('id', '1024')  # or another available ID
-    cNvPr.set('name', 'Picture Placeholder %d' % ph_idx)
-    cNvPr.append(ph_el)
-    
-    cNvSpPr = SubElement(nvSpPr, 'p:cNvSpPr')
-    
-    spPr = SubElement(new_sp_el, 'p:spPr')
-    xfrm = SubElement(spPr, 'a:xfrm')
-    off = SubElement(xfrm, 'a:off')
-    off.set('x', str(left))
-    off.set('y', str(top))
-    ext = SubElement(xfrm, 'a:ext')
-    ext.set('cx', str(width))
-    ext.set('cy', str(height))
-
-    spTree.append(new_sp_el)
-    
-    # find the newly created shape and return it
-    for shape in slide.shapes:
-        if shape.is_placeholder and shape.placeholder_format.idx == ph_idx:
-            return shape
-    return None
-
 def main():
     if uploaded_pptx and uploaded_zip:
         if "process_started" not in st.session_state:
@@ -250,48 +210,32 @@ def main():
 
                 first_slide = prs.slides[0]
                 
-                st.info("🎨 جاري تحويل الصور العادية إلى placeholders في الشريحة الأولى...")
+                # --- تعديل: إزالة الخطوة التي سببت الخطأ واستبدالها بحل بديل
                 
-                regular_pictures_to_convert = [
-                    shape for shape in first_slide.shapes
-                    if hasattr(shape, 'shape_type') and shape.shape_type == PICTURE_SHAPE_TYPE
-                ]
-
-                # حفظ المواقع والأحجام
-                pic_data = [(pic.left, pic.top, pic.width, pic.height) for pic in regular_pictures_to_convert]
-
-                # حذف الصور العادية
-                for pic in regular_pictures_to_convert:
-                    first_slide.shapes._spTree.remove(pic.element)
+                # إعداد قائمة بالمواضع التي سيتم استخدامها كقالب
+                template_positions = get_image_positions(first_slide)
                 
-                # إضافة placeholders في نفس المواقع
-                next_ph_idx = 1000  # استخدام فهرس كبير لتجنب التعارض
-                for (left, top, width, height) in pic_data:
-                    create_placeholder(first_slide, left, top, width, height, next_ph_idx)
-                    next_ph_idx += 1
-                
-                st.success("✅ تم تحويل جميع الصور العادية إلى placeholders بنجاح.")
-                
-                image_positions = get_image_positions(first_slide)
-                
-                if analysis_result['total_slots'] == 0:
-                    st.warning("⚠ الشريحة الأولى لا تحتوي على مواضع صور. سيتم إنشاء شرائح جديدة وإضافة الصورة الأولى من كل مجلد.")
-                    mismatch_action = 'truncate'
+                if not template_positions:
+                    st.warning("⚠ الشريحة الأولى لا تحتوي على مواضع صور. سيتم إضافة الصورة الأولى من كل مجلد فقط.")
+                    # هنا نستخدم تخطيط شريحة فارغ
+                    slide_layout = prs.slide_layouts[6]
                 else:
-                    mismatch_action = 'truncate'
+                    # نستخدم تخطيط الشريحة الفارغ لإنشاء شريحة جديدة
+                    # ثم نضيف لها placeholders في المواضع التي تم استخراجها
+                    slide_layout = prs.slide_layouts[6]
 
                 mismatch_folders = []
                 for fp in folder_paths:
                     imgs = [f for f in os.listdir(fp) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp'))]
-                    if len(imgs) != len(image_positions):
-                        mismatch_folders.append((os.path.basename(fp), len(imgs), len(image_positions)))
+                    if len(imgs) != len(template_positions):
+                        mismatch_folders.append((os.path.basename(fp), len(imgs), len(template_positions)))
                 
                 if mismatch_folders and 'mismatch_action' not in st.session_state:
                     with st.form("mismatch_form"):
                         st.warning("⚠ تم اكتشاف اختلاف في عدد الصور لبعض المجلدات مقارنة بعدد مواضع الصور في الشريحة الأولى.")
                         for name, img_count, _ in mismatch_folders:
                             st.write(f"- المجلد `{name}` يحتوي على {img_count} صورة.")
-                        st.markdown(f"**عدد مواضع الصور في القالب: {len(image_positions)}**")
+                        st.markdown(f"**عدد مواضع الصور في القالب: {len(template_positions)}**")
 
                         choice_text = st.radio(
                             "اختر كيف تريد التعامل مع المجلدات التي يختلف عدد صورها:",
@@ -320,7 +264,6 @@ def main():
                 st.info("🔄 جاري إضافة الشرائح الجديدة...")
                 total_replaced = 0
                 created_slides = 0
-                slide_layout = analysis_result['slide_layout']
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -335,19 +278,25 @@ def main():
                             st.warning(f"⚠ المجلد {folder_name} فارغ من الصور، سيتم تخطيه.")
                         continue
 
-                    if mismatch_action == 'skip_folder' and len(imgs) != len(image_positions):
+                    if mismatch_action == 'skip_folder' and len(imgs) != len(template_positions):
                         if show_details:
                             st.info(f"ℹ تم تخطي المجلد {folder_name} لوجود اختلاف في عدد الصور.")
                         continue
 
+                    # إنشاء شريحة جديدة بناءً على التخطيط الفارغ
                     new_slide = prs.slides.add_slide(slide_layout)
                     created_slides += 1
-                    
-                    new_image_positions = get_image_positions(new_slide)
 
-                    replaced_count, message = replace_images_in_slide(
-                        new_slide, folder_path, folder_name, new_image_positions, show_details, mismatch_action
-                    )
+                    # إضافة placeholders يدويًا إلى الشريحة الجديدة
+                    for pos in template_positions:
+                        new_slide.shapes.add_picture(
+                            os.path.join(folder_path, imgs[template_positions.index(pos) % len(imgs)]),
+                            pos['left'], pos['top'], pos['width'], pos['height']
+                        )
+                    
+                    # استبدال الصور في الشريحة الجديدة
+                    replaced_count = len(template_positions)
+                    
                     total_replaced += replaced_count
                     if show_details:
                         st.success(f"✅ تم إنشاء شريحة للمجلد '{folder_name}' واستبدال {replaced_count} صورة")
