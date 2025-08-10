@@ -9,51 +9,39 @@ from pptx.util import Inches
 import random
 
 # Set Streamlit page configuration
-st.set_page_config(page_title="Slide-Sync-Images", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Slide-Sync-Images", layout="centered", initial_sidebar_state="expanded")
 
 # --- App Header and Description ---
-st.title("🖼️ Slide-Sync-Images: PowerPoint Image Replacer")
-st.markdown("""
-_An easy-to-use tool for quickly generating new PowerPoint slides from templates and image folders._
-""")
+st.markdown("<h1 style='text-align: center;'>🔄 Slide-Sync-Images</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; font-size: 1.1em; color: #888;'>أداة سهلة وسريعة لإنشاء شرائح PowerPoint جديدة من قالب ومجلدات صور.</p>", unsafe_allow_html=True)
 st.markdown("---")
-
-# --- Sidebar for Instructions ---
-with st.sidebar:
-    st.header("📖 Instructions")
-    st.markdown("""
-    1.  **Upload a PowerPoint Template (.pptx)**: This file's first slide will be used as a template. It should contain placeholders or regular images where you want new images to appear.
-    2.  **Upload a ZIP file**: This file must contain one or more folders, with each folder containing the images for a single new slide.
-    3.  **Choose your settings**: Decide whether you want to place images sequentially or randomly.
-    4.  **Click "Start Processing"**: The app will generate a new PowerPoint file with a slide for each folder in your ZIP file.
-    """)
 
 # --- Main Interface ---
 
-st.header("📂 File Uploads")
-uploaded_pptx = st.file_uploader("Upload PowerPoint Template (.pptx)", type=["pptx"], key="pptx_uploader")
-uploaded_zip = st.file_uploader("Upload ZIP file with image folders", type=["zip"], key="zip_uploader")
+st.subheader("📂 تحميل الملفات")
+uploaded_pptx = st.file_uploader("اختر ملف PowerPoint للقالب (.pptx)", type=["pptx"], key="pptx_uploader")
+uploaded_zip = st.file_uploader("اختر ملف ZIP يحتوي على مجلدات الصور", type=["zip"], key="zip_uploader")
 
 st.markdown("---")
 
-st.header("⚙️ Processing Settings")
+st.subheader("⚙️ إعدادات المعالجة")
 image_order_option = st.radio(
-    "How should images be placed in the slides?",
-    ("In order (Default)", "Randomly"),
+    "كيف تريد ترتيب الصور في الشرائح؟",
+    ("بالترتيب (افتراضي)", "عشوائي"),
     index=0
 )
 
-st.markdown("---")
+show_details = st.checkbox("عرض التفاصيل المفصلة", value=False)
 
-show_details = st.checkbox("Show detailed processing log", value=False)
+st.markdown("---")
 
 
 def analyze_first_slide(prs):
     """
-    Analyzes the first slide of the presentation to find all image shapes.
+    تحليل الشريحة الأولى: إرجاع نتائج حتى لو لم توجد مواضع للصور.
     """
     if len(prs.slides) == 0:
-        return False, "No slides found in the template."
+        return False, "لا توجد شرائح في الملف."
 
     first_slide = prs.slides[0]
     
@@ -80,7 +68,7 @@ def analyze_first_slide(prs):
 
 def get_image_shapes(slide):
     """
-    Extracts and sorts all image shapes (placeholders and regular pictures) from a slide.
+    استخراج وترتيب جميع أشكال الصور من الشريحة، سواء كانت placeholders أو صور عادية.
     """
     PICTURE_SHAPE_TYPES = (13, 21)
     
@@ -100,12 +88,12 @@ def main():
         if "process_started" not in st.session_state:
             st.session_state.process_started = False
 
-        if st.button("🚀 Start Processing") or st.session_state.process_started:
+        if st.button("🚀 بدء المعالجة", use_container_width=True) or st.session_state.process_started:
             st.session_state.process_started = True
             
             temp_dir = None
             try:
-                with st.spinner("Checking and extracting files..."):
+                with st.spinner("📦 جاري فحص واستخراج الملفات..."):
                     zip_bytes = io.BytesIO(uploaded_zip.read())
                     with zipfile.ZipFile(zip_bytes, "r") as zip_ref:
                         temp_dir = "temp_images"
@@ -118,31 +106,31 @@ def main():
                     folder_paths = [os.path.join(temp_dir, item) for item in all_items if os.path.isdir(os.path.join(temp_dir, item))]
                 
                 if not folder_paths:
-                    st.error("❌ The ZIP file doesn't contain any image folders.")
+                    st.error("❌ ملف ZIP لا يحتوي على أي مجلدات صور.")
                     st.stop()
                 
                 folder_paths.sort()
-                st.success(f"✅ Found **{len(folder_paths)}** image folders to process.")
+                st.success(f"✅ تم العثور على **{len(folder_paths)}** مجلد صور للمعالجة.")
 
                 prs = Presentation(io.BytesIO(uploaded_pptx.read()))
                 
-                st.info("🔍 Analyzing the template slide...")
+                st.info("🔍 جاري تحليل الشريحة الأولى...")
                 ok, analysis_result = analyze_first_slide(prs)
                 if not ok:
-                    st.error(f"❌ Error: {analysis_result}")
+                    st.error(f"❌ خطأ: {analysis_result}")
                     st.stop()
                 
-                st.success("✅ Template analysis complete.")
+                st.success("✅ تم الانتهاء من تحليل القالب.")
                 col1, col2, col3 = st.columns(3)
-                with col1: st.metric("Image Placeholders", analysis_result['placeholders'])
-                with col2: st.metric("Regular Images", analysis_result['regular_pictures'])
-                with col3: st.metric("Total Image Slots", analysis_result['total_slots'])
+                with col1: st.metric("عدد placeholders", analysis_result['placeholders'])
+                with col2: st.metric("عدد الصور العادية", analysis_result['regular_pictures'])
+                with col3: st.metric("إجمالي أماكن الصور", analysis_result['total_slots'])
                 
                 first_slide = prs.slides[0]
                 template_image_shapes = get_image_shapes(first_slide)
                 
                 if not template_image_shapes:
-                    st.warning("⚠ The template slide has no image slots. We'll add one image per slide.")
+                    st.warning("⚠ لا توجد أماكن للصور في القالب. سيتم إضافة صورة واحدة لكل شريحة.")
                     slide_layout = prs.slide_layouts[6]
                 else:
                     slide_layout = analysis_result['slide_layout']
@@ -155,24 +143,24 @@ def main():
                 
                 if mismatch_folders and 'mismatch_action' not in st.session_state:
                     with st.form("mismatch_form"):
-                        st.warning("⚠️ Mismatch detected! Some folders have a different number of images than the template slots.")
+                        st.warning("⚠️ تم اكتشاف اختلاف في عدد الصور لبعض المجلدات مقارنة بأماكن الصور في القالب.")
                         for name, img_count, _ in mismatch_folders:
-                            st.write(f"- Folder `{name}` has {img_count} images.")
-                        st.markdown(f"**Number of image slots in template: {len(template_image_shapes)}**")
+                            st.write(f"- المجلد `{name}` يحتوي على {img_count} صورة.")
+                        st.markdown(f"**عدد أماكن الصور في القالب: {len(template_image_shapes)}**")
 
                         choice_text = st.radio(
-                            "How should we handle folders with a different number of images?",
-                            ("Truncate (use only up to the number of slots)", "Repeat (cycle through images to fill all slots)", "Skip (ignore folders with a mismatch)", "Stop (abort the entire process)"),
+                            "اختر كيف تريد التعامل مع المجلدات التي يختلف عدد صورها:",
+                            ("اقتصاص (استبدال فقط حتى أقل عدد)", "تكرار (ملء كل الأماكن بتكرار الصور)", "تخطي (تجاهل المجلدات التي بها اختلاف)", "إيقاف (إلغاء العملية بالكامل)"),
                             index=0
                         )
-                        submit_choice = st.form_submit_button("✅ Confirm and Continue")
+                        submit_choice = st.form_submit_button("✅ تأكيد المتابعة")
 
                     if submit_choice:
                         st.session_state['mismatch_action'] = {
-                            "Truncate (use only up to the number of slots)": 'truncate',
-                            "Repeat (cycle through images to fill all slots)": 'repeat',
-                            "Skip (ignore folders with a mismatch)": 'skip_folder',
-                            "Stop (abort the entire process)": 'stop'
+                            "اقتصاص (استبدال فقط حتى أقل عدد)": 'truncate',
+                            "تكرار (ملء كل الأماكن بتكرار الصور)": 'repeat',
+                            "تخطي (تجاهل المجلدات التي بها اختلاف)": 'skip_folder',
+                            "إيقاف (إلغاء العملية بالكامل)": 'stop'
                         }.get(choice_text)
                     else:
                         st.stop()
@@ -183,10 +171,10 @@ def main():
                     mismatch_action = 'truncate'
 
                 if mismatch_action == 'stop':
-                    st.error("❌ Process aborted by user choice.")
+                    st.error("❌ تم إلغاء العملية بناءً على اختيارك.")
                     st.stop()
 
-                st.info("🔄 Generating new slides...")
+                st.info("🔄 جاري إنشاء الشرائح الجديدة...")
                 total_replaced = 0
                 created_slides = 0
 
@@ -195,23 +183,23 @@ def main():
 
                 for folder_idx, folder_path in enumerate(folder_paths):
                     folder_name = os.path.basename(folder_path)
-                    status_text.text(f"Processing folder {folder_idx + 1}/{len(folder_paths)}: **{folder_name}**")
+                    status_text.text(f"جاري معالجة المجلد {folder_idx + 1}/{len(folder_paths)}: **{folder_name}**")
 
                     imgs = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp'))]
                     
                     if not imgs:
                         if show_details:
-                            st.warning(f"⚠ Folder '{folder_name}' is empty. Skipping.")
+                            st.warning(f"⚠ المجلد '{folder_name}' فارغ من الصور. تم التخطي.")
                         continue
                     
-                    if image_order_option == "Randomly":
+                    if image_order_option == "عشوائي":
                         random.shuffle(imgs)
                     else:
                         imgs.sort()
 
                     if mismatch_action == 'skip_folder' and len(imgs) != len(template_image_shapes):
                         if show_details:
-                            st.info(f"ℹ Skipping folder '{folder_name}' due to image count mismatch.")
+                            st.info(f"ℹ تم تخطي المجلد '{folder_name}' بسبب اختلاف عدد الصور.")
                         continue
 
                     new_slide = prs.slides.add_slide(slide_layout)
@@ -228,11 +216,9 @@ def main():
                         image_path = os.path.join(folder_path, image_filename)
                         
                         try:
-                            # Use insert_picture if available (for placeholders)
                             new_shape.insert_picture(image_path)
                             replaced_count += 1
                         except AttributeError:
-                            # Fallback for regular pictures to maintain position/size
                             left, top, width, height = new_shape.left, new_shape.top, new_shape.width, new_shape.height
                             new_shape.element.getparent().remove(new_shape.element)
                             new_slide.shapes.add_picture(
@@ -255,22 +241,22 @@ def main():
                         pass
                     
                     if show_details:
-                        st.success(f"✅ Created slide for '{folder_name}' and replaced {replaced_count} images.")
+                        st.success(f"✅ تم إنشاء شريحة للمجلد '{folder_name}' واستبدال {replaced_count} صورة.")
 
                     progress_bar.progress((folder_idx + 1) / len(folder_paths))
 
                 progress_bar.empty()
                 status_text.empty()
 
-                st.success("🎉 **Processing complete!**")
+                st.success("🎉 **تم الانتهاء من المعالجة بنجاح!**")
                 
                 col1, col2, col3 = st.columns(3)
-                with col1: st.metric("Slides Added", created_slides)
-                with col2: st.metric("Images Replaced", total_replaced)
-                with col3: st.metric("Folders Processed", len(folder_paths))
+                with col1: st.metric("الشرائح المضافة", created_slides)
+                with col2: st.metric("الصور المستبدلة", total_replaced)
+                with col3: st.metric("المجلدات التي تمت معالجتها", len(folder_paths))
 
                 if created_slides == 0:
-                    st.error("❌ No slides were added to the presentation.")
+                    st.error("❌ لم يتم إضافة أي شرائح إلى العرض التقديمي.")
                     st.stop()
 
                 original_name = os.path.splitext(uploaded_pptx.name)[0]
@@ -280,23 +266,34 @@ def main():
                 output_buffer.seek(0)
 
                 st.download_button(
-                    label="⬇️ Download Updated Presentation",
+                    label="⬇️ تحميل العرض التقديمي المحدث",
                     data=output_buffer.getvalue(),
                     file_name=output_filename,
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                    key="download_button"
+                    use_container_width=True
                 )
 
             except Exception as e:
-                st.error(f"❌ An error occurred during processing: {e}")
+                st.error(f"❌ حدث خطأ أثناء المعالجة: {e}")
                 if show_details:
                     import traceback
-                    st.error(f"Error details: {traceback.format_exc()}")
+                    st.error(f"تفاصيل الخطأ: {traceback.format_exc()}")
             finally:
                 if temp_dir and os.path.exists(temp_dir):
                     shutil.rmtree(temp_dir)
     else:
-        st.info("Awaiting file uploads... Please provide both a PowerPoint template and a ZIP file.")
+        st.info("👋 مرحباً! قم بتحميل ملف PowerPoint والقالب المضغوط للبدء.")
+
+        st.sidebar.header("📖 تعليمات")
+        st.sidebar.markdown("""
+        **1. ملف PowerPoint (.pptx):**
+        - يجب أن يحتوي على شريحة واحدة على الأقل.
+        - سيتم استخدام الشريحة الأولى كقالب.
+
+        **2. ملف ZIP:**
+        - يجب أن يحتوي على مجلدات، وكل مجلد يضم الصور المخصصة لشريحة واحدة.
+        - سيتم استخدام أسماء المجلدات كعناوين للشرائح.
+        """)
 
 if __name__ == '__main__':
     main()
