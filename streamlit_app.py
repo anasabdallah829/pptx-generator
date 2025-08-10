@@ -303,15 +303,19 @@ def main():
                         image_path = os.path.join(folder_path, image_filename)
                         
                         try:
-                            new_shape.insert_picture(image_path)
-                            replaced_count += 1
-                        except AttributeError:
-                            left, top, width, height = new_shape.left, new_shape.top, new_shape.width, new_shape.height
-                            new_shape.element.getparent().remove(new_shape.element)
-                            new_slide.shapes.add_picture(
-                                image_path, left, top, width, height
-                            )
-                            replaced_count += 1
+                            # If it's a placeholder, use insert_picture
+                            if new_shape.is_placeholder and new_shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
+                                new_shape.insert_picture(image_path)
+                                replaced_count += 1
+                            else:
+                                # If it's a regular picture, we delete and recreate to preserve size/position
+                                left, top, width, height = new_shape.left, new_shape.top, new_shape.width, new_shape.height
+                                new_shape.element.getparent().remove(new_shape.element)
+                                new_slide.shapes.add_picture(image_path, left, top, width, height)
+                                replaced_count += 1
+                        except Exception:
+                             if show_details:
+                                st.warning(f"⚠️ فشل استبدال الصورة في الشريحة الجديدة. تم تخطيها.")
                             
                     total_replaced += replaced_count
                     
