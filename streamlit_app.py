@@ -9,14 +9,27 @@ import pptx
 from pptx.oxml.ns import qn
 from pptx.util import Inches
 
-# محاولة استيراد MSO_SHAPE.PICTURE
+# محاولة تحديد نوع الشكل المراد استخدامه
+PICTURE_SHAPE_TYPE = None
+
 try:
     from pptx.enum.shapes import MSO_SHAPE
-    PICTURE_SHAPE_TYPE = MSO_SHAPE.PICTURE.value
+    if hasattr(MSO_SHAPE, 'PICTURE'):
+        PICTURE_SHAPE_TYPE = MSO_SHAPE.PICTURE.value
 except ImportError:
-    # في حالة فشل الاستيراد، نستخدم MSO_AUTO_SHAPE_TYPE
-    from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
-    PICTURE_SHAPE_TYPE = MSO_AUTO_SHAPE_TYPE.PICTURE.value
+    pass
+
+if PICTURE_SHAPE_TYPE is None:
+    try:
+        from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
+        if hasattr(MSO_AUTO_SHAPE_TYPE, 'PICTURE'):
+            PICTURE_SHAPE_TYPE = MSO_AUTO_SHAPE_TYPE.PICTURE.value
+    except ImportError:
+        pass
+
+if PICTURE_SHAPE_TYPE is None:
+    # كخيار أخير إذا فشل كل شيء، نستخدم القيمة الرقمية
+    PICTURE_SHAPE_TYPE = 13 # القيمة الرقمية لـ PICTURE_SHAPE_TYPE
 
 # إعداد صفحة Streamlit
 st.set_page_config(page_title="PowerPoint Image Replacer", layout="centered")
