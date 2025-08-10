@@ -3,7 +3,8 @@ import zipfile
 import os
 import io
 from pptx import Presentation
-from pptx.enum.shapes import PP_PLACEHOLDER, MSO_SHAPE
+from pptx.enum.shapes import PP_PLACEHOLDER
+from pptx.enum.shapes import MSO_SHAPE as types_MSO_SHAPE
 from pptx.util import Inches
 import shutil
 import pptx
@@ -40,7 +41,7 @@ def analyze_first_slide(prs):
     # البحث عن الصور العادية باستخدام MSO_SHAPE.PICTURE
     regular_pictures = [
         shape for shape in first_slide.shapes
-        if hasattr(shape, 'shape_type') and shape.shape_type == MSO_SHAPE.PICTURE.value
+        if hasattr(shape, 'shape_type') and shape.shape_type == types_MSO_SHAPE.PICTURE.value
     ]
 
     total_image_slots = len(picture_placeholders) + len(regular_pictures)
@@ -69,7 +70,7 @@ def get_image_positions(slide):
                 'width': shape.width,
                 'height': shape.height
             })
-        elif hasattr(shape, 'shape_type') and shape.shape_type == MSO_SHAPE.PICTURE.value:
+        elif hasattr(shape, 'shape_type') and shape.shape_type == types_MSO_SHAPE.PICTURE.value:
             positions.append({
                 'shape': shape,
                 'type': 'picture',
@@ -140,7 +141,6 @@ def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positi
         elif mismatch_action == 'repeat':
             image_filename = images[i % len(images)]
         else:
-            # حالات 'skip_folder' أو 'stop' تُعالج في الدالة الرئيسية
             if mismatch_action == 'skip_folder':
                 return 0, f"تم تخطي المجلد {folder_name} بطلب المستخدم"
             elif mismatch_action == 'stop':
@@ -169,7 +169,6 @@ def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positi
         except Exception as e:
             if show_details:
                 st.warning(f"⚠ فشل استبدال الصورة {image_filename}: {e}")
-            # نستمر دون مقاطعة العملية
 
     return replaced_count, "تم بنجاح"
 
@@ -178,7 +177,6 @@ if uploaded_pptx and uploaded_zip:
     if st.button("🚀 بدء المعالجة"):
         temp_dir = None
         try:
-            # الخطوة 1: فحص الملف المضغوط
             st.info("📦 جاري فحص الملفات...")
             zip_bytes = io.BytesIO(uploaded_zip.read())
             with zipfile.ZipFile(zip_bytes, "r") as zip_ref:
@@ -198,10 +196,8 @@ if uploaded_pptx and uploaded_zip:
             folder_paths.sort()
             st.success(f"✅ تم العثور على {len(folder_paths)} مجلد يحتوي على صور")
 
-            # قراءة ملف PowerPoint
             prs = Presentation(io.BytesIO(uploaded_pptx.read()))
 
-            # الخطوة 2: تحليل الشريحة الأولى
             st.info("🔍 جاري تحليل الشريحة الأولى...")
             ok, analysis_result = analyze_first_slide(prs)
             if not ok:
@@ -217,18 +213,15 @@ if uploaded_pptx and uploaded_zip:
             with col3:
                 st.metric("إجمالي أماكن الصور", analysis_result['total_slots'])
 
-            # الحصول على مواقع الصور من الشريحة الأولى (قد يكون فارغاً)
             first_slide = prs.slides[0]
             image_positions = get_image_positions(first_slide)
 
-            # معالجة حالة عدم وجود مواضع صور
             if analysis_result['total_slots'] == 0:
                 st.warning("⚠ الشريحة الأولى لا تحتوي على مواضع صور. سيتم إنشاء شرائح جديدة وإضافة الصورة الأولى من كل مجلد.")
-                mismatch_action = 'truncate' # لا يوجد خيار آخر منطقي هنا
+                mismatch_action = 'truncate'
             else:
-                mismatch_action = 'truncate' # القيمة الافتراضية
+                mismatch_action = 'truncate'
 
-            # التحقق من اختلافات عدد الصور في المجلدات
             mismatch_folders = []
             folder_info_list = []
             for fp in folder_paths:
@@ -237,7 +230,6 @@ if uploaded_pptx and uploaded_zip:
                 if len(imgs) != len(image_positions):
                     mismatch_folders.append((os.path.basename(fp), len(imgs), len(image_positions)))
 
-            # إذا كانت هناك اختلافات ولم يتم اتخاذ إجراء بعد
             if mismatch_folders and 'mismatch_action' not in st.session_state:
                 with st.form("mismatch_form"):
                     st.warning("⚠ تم اكتشاف اختلاف في عدد الصور لبعض المجلدات مقارنة بعدد مواضع الصور في الشريحة الأولى.")
@@ -261,7 +253,6 @@ if uploaded_pptx and uploaded_zip:
                         st.session_state['mismatch_action'] = 'skip_folder'
                     else:
                         st.session_state['mismatch_action'] = 'stop'
-                    # إعادة تشغيل التطبيق بعد حفظ الاختيار
                     st.experimental_rerun()
                 else:
                     st.stop()
@@ -272,20 +263,17 @@ if uploaded_pptx and uploaded_zip:
                     st.error("❌ تم إيقاف العملية بناءً على اختيار المستخدم.")
                     st.stop()
 
-            # حذف جميع الشرائح الموجودة (طريقة آمنة)
             st.info("🗑️ جاري حذف الشرائح الموجودة...")
             while prs.slides:
                 slide_id = prs.slides[0].slide_id
                 prs.part.delete_slide(slide_id)
             st.success("✅ تم حذف جميع الشرائح القديمة.")
             
-            # الخطوة 4: إنشاء شريحة لكل مجلد
             st.info("🔄 جاري إنشاء الشرائح الجديدة...")
             total_replaced = 0
             created_slides = 0
             slide_layout = analysis_result['slide_layout']
 
-            # شريط التقدم
             progress_bar = st.progress(0)
             status_text = st.empty()
 
@@ -304,11 +292,9 @@ if uploaded_pptx and uploaded_zip:
                         st.info(f"ℹ تم تخطي المجلد {folder_name} لوجود اختلاف في عدد الصور.")
                     continue
 
-                # إنشاء شريحة جديدة
                 new_slide = prs.slides.add_slide(slide_layout)
                 created_slides += 1
                 
-                # الحصول على مواقع الصور من الشريحة الجديدة
                 new_image_positions = get_image_positions(new_slide)
 
                 replaced_count, message = replace_images_in_slide(
@@ -319,15 +305,12 @@ if uploaded_pptx and uploaded_zip:
                 if show_details:
                     st.success(f"✅ تم إنشاء شريحة للمجلد '{folder_name}' واستبدال {replaced_count} صورة")
 
-                # تحديث شريط التقدم
                 progress = (folder_idx + 1) / len(folder_paths)
                 progress_bar.progress(progress)
 
-            # مسح شريط التقدم
             progress_bar.empty()
             status_text.empty()
 
-            # النتائج النهائية
             st.success("🎉 تم الانتهاء من المعالجة!")
             if 'mismatch_action' in st.session_state:
                 del st.session_state['mismatch_action']
@@ -344,7 +327,6 @@ if uploaded_pptx and uploaded_zip:
                 st.error("❌ لم يتم إنشاء أي شرائح.")
                 st.stop()
 
-            # حفظ الملف الجديد
             original_name = os.path.splitext(uploaded_pptx.name)[0]
             output_filename = f"{original_name}_Updated.pptx"
             output_buffer = io.BytesIO()
