@@ -1,122 +1,97 @@
 import streamlit as st
 from pptx import Presentation
-from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Inches
-from io import BytesIO
 import zipfile
 import os
+import tempfile
+import shutil
 
-# ---------------------------------------------
-# دالة للتحقق من كون الشكل في الشريحة عبارة عن صورة
-# ---------------------------------------------
-def is_picture(shape):
-    return shape.shape_type == MSO_SHAPE_TYPE.PICTURE
-
-# ---------------------------------------------
-# دالة لاستبدال الصور في الشريحة مع الحفاظ على الأبعاد والمكان
-# ---------------------------------------------
-def replace_images_in_slide(slide, images):
+# ====== دالة لاستبدال الصور في الشريحة ======
+def replace_images_in_slide(slide, image_paths):
+    """
+    استبدال الصور في شريحة PowerPoint بقائمة من الصور الجديدة.
+    يتم التعامل مع أي صور موجودة في الشريحة واستبدالها حسب الترتيب.
+    """
     img_index = 0
     for shape in slide.shapes:
-        if is_picture(shape) and img_index < len(images):
-            try:
-                # الاحتفاظ بالموقع والأبعاد الأصلية
-                left, top, width, height = shape.left, shape.top, shape.width, shape.height
-                
+        if shape.shape_type == 13:  # رقم 13 هو نوع الصورة في PPTX
+            if img_index < len(image_paths):
                 # حذف الصورة القديمة
-                sp = shape._element
-                sp.getparent().remove(sp)
-                
-                # إدراج الصورة الجديدة بنفس الأبعاد والمكان
-                slide.shapes.add_picture(images[img_index], left, top, width, height)
+                x, y, cx, cy = shape.left, shape.top, shape.width, shape.height
+                slide.shapes._spTree.remove(shape._element)
+                # إدراج الصورة الجديدة
+                slide.shapes.add_picture(image_paths[img_index], x, y, cx, cy)
                 img_index += 1
-            except Exception as e:
-                st.warning(f"تعذر استبدال الصورة: {e}")
 
-# ---------------------------------------------
-# الدالة الرئيسية لمعالجة ملف PowerPoint
-# ---------------------------------------------
-def process_pptx(pptx_template, zip_images):
-    # تحميل القالب
-    try:
-        prs = Presentation(pptx_template)
-    except Exception as e:
-        st.error(f"تعذر قراءة ملف PowerPoint: {e}")
-        return None
+# ====== الدالة الرئيسية للتطبيق ======
+def process_pptx(template_pptx, images_zip):
+    """
+    قراءة ملف PowerPoint وقائمة صور من ملف مضغوط، واستبدال الصور في كل شريحة.
+    """
+    # إنشاء مجلد مؤقت
+    temp_dir = tempfile.mkdtemp()
 
-    # استخراج الصور من ملف zip
-    temp_dir = "temp_images"
-    os.makedirs(temp_dir, exist_ok=True)
-    try:
-        with zipfile.ZipFile(zip_images, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
-    except Exception as e:
-        st.error(f"تعذر استخراج الصور من ملف ZIP: {e}")
-        return None
+    # حفظ الملفات المرفوعة في مجلد مؤقت
+    template_path = os.path.join(temp_dir, "template.pptx")
+    with open(template_path, "wb") as f:
+        f.write(template_pptx.getbuffer())
 
-    # فرز المجلدات لضمان ترتيب الصور
-    folders = sorted(
-        [os.path.join(temp_dir, d) for d in os.listdir(temp_dir) if os.path.isdir(os.path.join(temp_dir, d))]
-    )
+    zip_path = os.path.join(temp_dir, "images.zip")
+    with open(zip_path, "wb") as f:
+        f.write(images_zip.getbuffer())
 
-    # التأكد من أن هناك مجلدات للصور
-    if not folders:
-        st.error("ملف ZIP لا يحتوي على مجلدات صور صالحة.")
-        return None
+    # فك ضغط الصور
+    extract_path = os.path.join(temp_dir, "images")
+    os.makedirs(extract_path, exist_ok=True)
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(extract_path)
 
-    # نسخة الشريحة الأولى كمصدر للقالب
-    first_slide_layout = prs.slides[0]
-    
-    for folder in folders:
-        images = sorted(
-            [os.path.join(folder, img) for img in os.listdir(folder) if img.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        )
+    # تحميل البوربوينت
+    prs = Presentation(template_path)
 
-        if not images:
-            st.warning(f"لا توجد صور في المجلد: {folder}")
-            continue
+    # جلب المجلدات بالترتيب
+    folders = sorted(os.listdir(extract_path))
+    for i, folder in enumerate(folders):
+        folder_path = os.path.join(extract_path, folder)
+        if os.path.isdir(folder_path):
+            image_files = sorted([
+                os.path.join(folder_path, img)
+                for img in os.listdir(folder_path)
+                if img.lower().endswith((".png", ".jpg", ".jpeg"))
+            ])
+            if i < len(prs.slides):
+                replace_images_in_slide(prs.slides[i], image_files)
 
-        # إذا كانت هذه أول مجلد، استبدل الصور في الشريحة الأولى
-        if folder == folders[0]:
-            replace_images_in_slide(prs.slides[0], images)
-        else:
-            # نسخ الشريحة الأولى
-            slide_clone = prs.slides.add_slide(first_slide_layout.slide_layout)
-            # نسخ محتوى الشريحة الأصلية إلى الجديدة
-            for shape in first_slide_layout.shapes:
-                slide_clone.shapes._spTree.insert_element_before(shape.element.clone(), 'p:extLst')
-            replace_images_in_slide(slide_clone, images)
+    # حفظ النتيجة
+    output_path = os.path.join(temp_dir, "output.pptx")
+    prs.save(output_path)
 
-    # حفظ النتيجة في ملف مؤقت
-    output_pptx = BytesIO()
-    prs.save(output_pptx)
-    output_pptx.seek(0)
+    # قراءة الملف الناتج وإرجاعه للتحميل
+    with open(output_path, "rb") as f:
+        pptx_bytes = f.read()
 
-    # تنظيف الملفات المؤقتة
-    for folder in folders:
-        for f in os.listdir(folder):
-            os.remove(os.path.join(folder, f))
-        os.rmdir(folder)
-    os.rmdir(temp_dir)
+    shutil.rmtree(temp_dir)  # تنظيف الملفات المؤقتة
+    return pptx_bytes
 
-    return output_pptx
 
-# ---------------------------------------------
-# واجهة المستخدم بـ Streamlit
-# ---------------------------------------------
-st.set_page_config(page_title="استبدال الصور في PowerPoint", page_icon="📊", layout="centered")
-
+# ====== واجهة Streamlit ======
 st.title("📊 أداة استبدال الصور في PowerPoint")
-st.write("قم بتحميل قالب PowerPoint وملف ZIP يحتوي على مجلدات صور، وسيتم إنشاء ملف PowerPoint جديد بنفس القالب.")
 
-pptx_file = st.file_uploader("📂 اختر ملف PowerPoint (.pptx)", type=["pptx"])
-zip_file = st.file_uploader("📂 اختر ملف ZIP للصور", type=["zip"])
+template_pptx = st.file_uploader("ارفع قالب PowerPoint (.pptx)", type=["pptx"])
+images_zip = st.file_uploader("ارفع ملف الصور المضغوط (.zip)", type=["zip"])
 
-if st.button("🔄 تنفيذ العملية"):
-    if pptx_file and zip_file:
-        result = process_pptx(pptx_file, zip_file)
-        if result:
-            st.success("✅ تم إنشاء الملف بنجاح!")
-            st.download_button("⬇️ تحميل الملف الناتج", result, file_name="output.pptx")
+if st.button("بدء المعالجة"):
+    if not template_pptx or not images_zip:
+        st.error("الرجاء رفع كل من ملف PowerPoint وملف الصور المضغوط.")
     else:
-        st.error("الرجاء تحميل الملفات المطلوبة.")
+        try:
+            output_file = process_pptx(template_pptx, images_zip)
+            st.success("✅ تم استبدال الصور بنجاح!")
+            st.download_button(
+                label="📥 تحميل الملف الناتج",
+                data=output_file,
+                file_name="output.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            )
+        except Exception as e:
+            st.error(f"حدث خطأ أثناء المعالجة: {e}")
