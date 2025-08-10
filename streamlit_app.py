@@ -43,38 +43,6 @@ uploaded_zip = st.file_uploader("🗜️ اختر ملف ZIP يحتوي على �
 # خيار عرض التفاصيل
 show_details = st.checkbox("عرض التفاصيل المفصلة", value=False)
 
-
-def delete_slide(presentation, slide_index):
-    """
-    حذف شريحة من العرض التقديمي باستخدام فهرسها.
-    """
-    slides = list(presentation.slides)
-    slides_with_id = [(s, s.slide_id) for s in slides]
-    
-    if slide_index >= len(slides):
-        return
-    
-    slide = slides_with_id[slide_index][0]
-    slide_id = slides_with_id[slide_index][1]
-    
-    p = presentation.part
-    # find rId of slide
-    for rId, part in p.rels.items():
-        if part.target_ref == slide.part.partname:
-            # remove relationship
-            p.rels.pop(rId)
-            break
-            
-    # find slide in the slide list
-    slide_list_id = [e.get('id') for e in p.slide_ids._sldIdLst]
-    
-    # get index of the slide in the list
-    index_to_remove = slide_list_id.index(str(slide_id))
-    
-    # remove slide from the list
-    p.slide_ids._sldIdLst.pop(index_to_remove)
-
-
 def analyze_first_slide(prs):
     """
     تحليل الشريحة الأولى: إرجاع نتائج حتى لو لم توجد مواضع للصور.
@@ -85,7 +53,7 @@ def analyze_first_slide(prs):
     first_slide = prs.slides[0]
     picture_placeholders = [
         shape for shape in first_slide.shapes
-        if shape.has_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE
+        if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE
     ]
     regular_pictures = [
         shape for shape in first_slide.shapes
@@ -107,7 +75,7 @@ def get_image_positions(slide):
     """
     positions = []
     for shape in slide.shapes:
-        if shape.has_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
+        if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE:
             positions.append({
                 'shape': shape, 'type': 'placeholder',
                 'left': shape.left, 'top': shape.top,
@@ -140,7 +108,7 @@ def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positi
     replaced_count = 0
     try:
         title_shapes = [shape for shape in slide.shapes
-                        if shape.has_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.TITLE]
+                        if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.TITLE]
         if title_shapes:
             title_shapes[0].text = folder_name
         else:
@@ -289,7 +257,6 @@ def main():
                     st.stop()
 
                 st.info("🗑️ جاري حذف الشرائح الموجودة...")
-                # استخدام طريقة مختلفة لحذف الشرائح
                 while len(prs.slides) > 0:
                     slide = prs.slides[0]
                     prs.slides.remove(slide)
