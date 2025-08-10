@@ -5,8 +5,6 @@ import io
 from pptx import Presentation
 from pptx.enum.shapes import PP_PLACEHOLDER
 import shutil
-import pptx
-from pptx.oxml.ns import qn
 from pptx.util import Inches
 from pptx.enum.shapes import MSO_SHAPE as types_MSO_SHAPE
 
@@ -42,6 +40,7 @@ uploaded_zip = st.file_uploader("🗜️ اختر ملف ZIP يحتوي على �
 
 # خيار عرض التفاصيل
 show_details = st.checkbox("عرض التفاصيل المفصلة", value=False)
+
 
 def analyze_first_slide(prs):
     """
@@ -256,16 +255,17 @@ def main():
                     st.error("❌ تم إيقاف العملية بناءً على اختيار المستخدم.")
                     st.stop()
 
-                st.info("🗑️ جاري حذف الشرائح الموجودة...")
-                while len(prs.slides) > 0:
-                    slide = prs.slides[0]
-                    prs.slides.remove(slide)
-                st.success("✅ تم حذف جميع الشرائح القديمة.")
-                
+                # حفظ قالب الشريحة الأولى
+                slide_layout = analysis_result['slide_layout']
+
+                # إنشاء عرض تقديمي جديد تمامًا
+                new_prs = Presentation()
+                new_prs.slide_width = prs.slide_width
+                new_prs.slide_height = prs.slide_height
+
                 st.info("🔄 جاري إنشاء الشرائح الجديدة...")
                 total_replaced = 0
                 created_slides = 0
-                slide_layout = analysis_result['slide_layout']
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -285,13 +285,14 @@ def main():
                             st.info(f"ℹ تم تخطي المجلد {folder_name} لوجود اختلاف في عدد الصور.")
                         continue
 
-                    new_slide = prs.slides.add_slide(slide_layout)
+                    new_slide = new_prs.slides.add_slide(slide_layout)
                     created_slides += 1
                     
+                    # استخراج المواضع من الشريحة الجديدة
                     new_image_positions = get_image_positions(new_slide)
 
                     replaced_count, message = replace_images_in_slide(
-                        prs, new_slide, folder_path, folder_name, new_image_positions, show_details, mismatch_action
+                        new_prs, new_slide, folder_path, folder_name, new_image_positions, show_details, mismatch_action
                     )
                     total_replaced += replaced_count
                     if show_details:
@@ -318,7 +319,7 @@ def main():
                 original_name = os.path.splitext(uploaded_pptx.name)[0]
                 output_filename = f"{original_name}_Updated.pptx"
                 output_buffer = io.BytesIO()
-                prs.save(output_buffer)
+                new_prs.save(output_buffer)
                 output_buffer.seek(0)
 
                 st.success(f"✅ تم إنشاء ملف PowerPoint جديد بـ {created_slides} شريحة!")
