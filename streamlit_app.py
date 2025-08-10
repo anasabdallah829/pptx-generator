@@ -37,8 +37,7 @@ def analyze_first_slide(prs):
         if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE
     ]
 
-    # البحث عن الصور العادية
-    # MSO_SHAPE.PICTURE.value = 13
+    # البحث عن الصور العادية باستخدام MSO_SHAPE.PICTURE
     regular_pictures = [
         shape for shape in first_slide.shapes
         if hasattr(shape, 'shape_type') and shape.shape_type == MSO_SHAPE.PICTURE.value
@@ -310,7 +309,6 @@ if uploaded_pptx and uploaded_zip:
                 created_slides += 1
                 
                 # الحصول على مواقع الصور من الشريحة الجديدة
-                # (ضروري للحصول على المراجع الصحيحة بعد إنشاء الشريحة)
                 new_image_positions = get_image_positions(new_slide)
 
                 replaced_count, message = replace_images_in_slide(
