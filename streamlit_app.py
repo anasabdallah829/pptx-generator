@@ -153,25 +153,11 @@ def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positi
         shape = pos_info['shape']
 
         try:
-            if pos_info['type'] == 'placeholder':
-                placeholder = shape
-                placeholder.insert_picture(image_path)
-                replaced_count += 1
-                if show_details:
-                    st.success(f"✅ تم استبدال صورة placeholder مع الحفاظ على التنسيقات: {image_filename}")
-            elif pos_info['type'] == 'picture':
-                # الطريقة الأفضل لاستبدال صورة عادية هي استبدال بيانات الصورة مباشرة
-                picture_shape = shape
-                picture = picture_shape._pic
-                image_part = picture.blip
-                
-                with open(image_path, 'rb') as f:
-                    image_bytes = f.read()
-                
-                image_part.blob = image_bytes
-                replaced_count += 1
-                if show_details:
-                    st.success(f"✅ تم استبدال الصورة العادية مع الحفاظ على التنسيقات: {image_filename}")
+            # استخدام insert_picture على الشكل نفسه
+            shape.insert_picture(image_path)
+            replaced_count += 1
+            if show_details:
+                st.success(f"✅ تم استبدال الصورة (placeholder أو عادية) مع الحفاظ على التنسيقات: {image_filename}")
         
         except Exception as e:
             if show_details:
