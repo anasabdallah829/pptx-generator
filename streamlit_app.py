@@ -22,6 +22,7 @@ def replace_images_in_slide(slide, image_paths):
 
     for shape in slide.shapes:
         # التحقق إذا كان الشكل عبارة عن صورة عادية
+        # تم تصحيح الخطأ هنا: استخدام MSO_SHAPE.PICTURE
         if shape.shape_type == MSO_SHAPE.PICTURE:
             if img_index < len(image_paths):
                 x, y, cx, cy = shape.left, shape.top, shape.width, shape.height
