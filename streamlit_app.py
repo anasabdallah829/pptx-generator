@@ -4,11 +4,19 @@ import os
 import io
 from pptx import Presentation
 from pptx.enum.shapes import PP_PLACEHOLDER
-from pptx.enum.shapes import MSO_SHAPE as types_MSO_SHAPE
-from pptx.util import Inches
 import shutil
 import pptx
 from pptx.oxml.ns import qn
+from pptx.util import Inches
+
+# محاولة استيراد MSO_SHAPE.PICTURE
+try:
+    from pptx.enum.shapes import MSO_SHAPE
+    PICTURE_SHAPE_TYPE = MSO_SHAPE.PICTURE.value
+except ImportError:
+    # في حالة فشل الاستيراد، نستخدم MSO_AUTO_SHAPE_TYPE
+    from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
+    PICTURE_SHAPE_TYPE = MSO_AUTO_SHAPE_TYPE.PICTURE.value
 
 # إعداد صفحة Streamlit
 st.set_page_config(page_title="PowerPoint Image Replacer", layout="centered")
@@ -38,10 +46,10 @@ def analyze_first_slide(prs):
         if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE
     ]
 
-    # البحث عن الصور العادية باستخدام MSO_SHAPE.PICTURE
+    # البحث عن الصور العادية باستخدام المتغير الديناميكي PICTURE_SHAPE_TYPE
     regular_pictures = [
         shape for shape in first_slide.shapes
-        if hasattr(shape, 'shape_type') and shape.shape_type == types_MSO_SHAPE.PICTURE.value
+        if hasattr(shape, 'shape_type') and shape.shape_type == PICTURE_SHAPE_TYPE
     ]
 
     total_image_slots = len(picture_placeholders) + len(regular_pictures)
@@ -70,7 +78,7 @@ def get_image_positions(slide):
                 'width': shape.width,
                 'height': shape.height
             })
-        elif hasattr(shape, 'shape_type') and shape.shape_type == types_MSO_SHAPE.PICTURE.value:
+        elif hasattr(shape, 'shape_type') and shape.shape_type == PICTURE_SHAPE_TYPE:
             positions.append({
                 'shape': shape,
                 'type': 'picture',
@@ -133,7 +141,6 @@ def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positi
 
     # معالجة كل موضع صورة
     for i, pos_info in enumerate(image_positions):
-        # اختيار الصورة وفق سياسة الاختلاف
         if mismatch_action == 'truncate':
             if i >= len(images):
                 break
@@ -156,11 +163,9 @@ def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positi
             shape = pos_info['shape']
             left, top, width, height = pos_info['left'], pos_info['top'], pos_info['width'], pos_info['height']
             
-            # حذف الشكل القديم
             sp_tree = slide.shapes._spTree
             sp_tree.remove(shape._element)
 
-            # إضافة صورة جديدة بنفس الموضع والأبعاد
             new_pic = slide.shapes.add_picture(image_path, left, top, width, height)
             
             replaced_count += 1
