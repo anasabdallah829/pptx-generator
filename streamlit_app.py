@@ -22,7 +22,7 @@ show_details = st.checkbox("عرض التفاصيل المفصلة", value=False
 
 
 def analyze_first_slide(prs):
-    """تحليل الشريحة الأولى لتحديد وجود صور أو placeholders"""
+    """تحليل الشريحة الأولى: إرجاع نتائج حتى لو لم توجد مواضع للصور (لا نوقف التشغيل هنا)."""
     if len(prs.slides) == 0:
         return False, "لا توجد شرائح في الملف"
 
@@ -42,15 +42,13 @@ def analyze_first_slide(prs):
 
     total_image_slots = len(picture_placeholders) + len(regular_pictures)
 
-    if total_image_slots > 0:
-        return True, {
-            'placeholders': len(picture_placeholders),
-            'regular_pictures': len(regular_pictures),
-            'total_slots': total_image_slots,
-            'slide_layout': first_slide.slide_layout
-        }
-    else:
-        return False, "لا توجد صور أو placeholders للصور في الشريحة الأولى"
+    # نعيد دائماً dict تحليلي (باستثناء حالة عدم وجود شرائح)
+    return True, {
+        'placeholders': len(picture_placeholders),
+        'regular_pictures': len(regular_pictures),
+        'total_slots': total_image_slots,
+        'slide_layout': first_slide.slide_layout
+    }
 
 
 def get_image_positions(slide):
@@ -83,8 +81,11 @@ def get_image_positions(slide):
     return positions
 
 
-def replace_images_in_slide(slide, images_folder, folder_name, image_positions, show_details=False, mismatch_action='truncate'):
-    """استبدال الصور في الشريحة مع الحفاظ على المواقع والأحجام.
+def replace_images_in_slide(prs, slide, images_folder, folder_name, image_positions,
+                            show_details=False, mismatch_action='truncate'):
+    """
+    استبدال الصور في الشريحة مع الحفاظ على المواقع والأحجام.
+    prs: Presentation object (مطلوب لعرض الشريحة إذا لم توجد مواضع).
     mismatch_action: 'truncate' | 'repeat' | 'skip_folder' | 'stop'
     """
     if not os.path.exists(images_folder):
@@ -121,6 +122,22 @@ def replace_images_in_slide(slide, images_folder, folder_name, image_positions, 
         if show_details:
             st.warning(f"⚠ خطأ في تعيين العنوان: {e}")
 
+    # حالة: لا توجد مواضع صور في القالب => نضيف صورة أولى مملوءة بعرض الشريحة
+    if not image_positions:
+        # نختار الصورة الأولى أو بحسب سياسة التكرار (repeat لا معنى هنا لأن سنعرض صورة واحدة)
+        image_filename = images[0]
+        image_path = os.path.join(images_folder, image_filename)
+        try:
+            # نفذ إضافة الصورة بمقياس يتناسب مع عرض الشريحة (يحافظ على النسبة)
+            slide.shapes.add_picture(image_path, 0, 0, prs.slide_width)
+            replaced_count += 1
+            if show_details:
+                st.success(f"✅ تم إضافة صورة مملوءة للشريحة (لا مواضع في القالب): {image_filename}")
+        except Exception as e:
+            if show_details:
+                st.warning(f"⚠ فشل إضافة الصورة المملوءة: {e}")
+        return replaced_count, "تم بنجاح (بدون مواضع)"
+
     # معالجة كل موضع صورة
     for i, pos_info in enumerate(image_positions):
         # اختيار الصورة وفق سياسة الاختلاف
@@ -131,7 +148,7 @@ def replace_images_in_slide(slide, images_folder, folder_name, image_positions, 
         elif mismatch_action == 'repeat':
             image_filename = images[i % len(images)]
         else:
-            # 'skip_folder' أو غيرها يتم التعامل معها قبل الاستدعاء عادة
+            # 'skip_folder' أو 'stop' يتم التعامل معها قبل الاستدعاء عادة
             if mismatch_action == 'skip_folder':
                 return 0, f"تم تخطي المجلد {folder_name} بطلب المستخدم"
             elif mismatch_action == 'stop':
@@ -146,7 +163,7 @@ def replace_images_in_slide(slide, images_folder, folder_name, image_positions, 
 
         try:
             if pos_info['type'] == 'placeholder':
-                # أسلوب آمن لاستبدال الplaceholder (يحافظ على التنسيق)
+                # أسلوب آمن لاستبدال الplaceholder (يحافظ على التنسيق قدر الإمكان)
                 try:
                     # insert_picture يقبل مسار الملف أو ملف باينري
                     pos_info['shape'].insert_picture(image_path)
@@ -169,17 +186,13 @@ def replace_images_in_slide(slide, images_folder, folder_name, image_positions, 
 
             elif pos_info['type'] == 'picture':
                 shape = pos_info['shape']
-                # الطريقة المفضلة: إضافة image part جديدة لشريحة وتغيير r:embed في blip (يحافظ على جميع التنسيقات)
+                # الطريقة المفضلة: إضافة image part جديدة لشريحة وتغيير r:embed في blip (يحافظ على التنسيقات)
                 try:
-                    # get_or_add_image_part متاحة على part (تُعيد image_part و rId جديد)
+                    # حاول الحصول أو إضافة image part جديد (قد يعتمد على نسخة python-pptx)
                     image_part, new_rId = shape.part.get_or_add_image_part(image_path)
                     # إيجاد عنصر blip وتعيين embed إلى rId الجديد
                     blip = None
-                    # غالباً يوجد عنصر blipFill
-                    if hasattr(shape._element, 'blipFill') and shape._element.blipFill is not None:
-                        blip = shape._element.blipFill.find(qn('a:blip'))
-                    if blip is None:
-                        # محاولة بديلة باستخدام xpath
+                    if shape._element is not None:
                         try:
                             blip_list = shape._element.xpath('.//a:blip', namespaces={
                                 'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'
@@ -299,19 +312,13 @@ if uploaded_pptx and uploaded_zip:
 
             # الخطوة 2: تحليل الشريحة الأولى
             st.info("🔍 جاري تحليل الشريحة الأولى...")
-            has_images, analysis_result = analyze_first_slide(prs)
-
-            if not has_images:
-                # الخطوة 3: إرسال تنبيه إذا لم توجد صور
-                st.error("❌ تنبيه: الشريحة الأولى لا تحتوي على صور أو placeholders للصور!")
-                st.error(f"📋 السبب: {analysis_result}")
-                st.info("💡 يُرجى رفع ملف PowerPoint يحتوي على:")
-                st.info("   • صور في الشريحة الأولى")
-                st.info("   • أو placeholders للصور")
+            ok, analysis_result = analyze_first_slide(prs)
+            if not ok:
+                st.error(f"❌ {analysis_result}")
                 st.stop()
 
             # عرض نتائج التحليل
-            st.success("✅ تم العثور على صور أو placeholders في الشريحة الأولى!")
+            st.success("✅ تحليل الشريحة الأولى جاهز")
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Placeholders للصور", analysis_result['placeholders'])
@@ -320,7 +327,21 @@ if uploaded_pptx and uploaded_zip:
             with col3:
                 st.metric("إجمالي أماكن الصور", analysis_result['total_slots'])
 
-            # الحصول على مواقع الصور من الشريحة الأولى
+            # إذا كانت الشريحة الأولى لا تحتوي على مواضع صور - اسأل المستخدم إن أراد المتابعة
+            if analysis_result['total_slots'] == 0:
+                with st.form("no_slots_form"):
+                    st.warning("⚠ الشريحة الأولى لا تحتوي على مواضع صور (total_slots = 0). سيتم إنشاء شرائح جديدة لكل مجلد، وستُضاف الصورة الأولى من كل مجلد مملوءة بعرض الشريحة.")
+                    cont = st.form_submit_button("📌 المتابعة وإنشاء الشرائح بدون مواضع")
+                    stop_btn = st.form_submit_button("⛔ إيقاف")
+                if stop_btn:
+                    st.info("❌ أوقف المستخدم العملية.")
+                    st.stop()
+                if not cont:
+                    # المستخدم لم يضغط أي زر بعد
+                    st.stop()
+                # إذا تابع المستخدم، نكمل بدون تغيير (لا حاجة لتخزين flag إضافي)
+
+            # الحصول على مواقع الصور من الشريحة الأولى (قد يكون فارغاً)
             first_slide = prs.slides[0]
             image_positions = get_image_positions(first_slide)
 
@@ -337,31 +358,33 @@ if uploaded_pptx and uploaded_zip:
                 if len(imgs) != len(image_positions):
                     mismatch_folders.append((os.path.basename(fp), len(imgs), len(image_positions)))
 
-            if mismatch_folders:
-                st.warning("⚠ تم اكتشاف اختلاف في عدد الصور لبعض المجلدات مقارنة بعدد مواضع الصور في الشريحة الأولى.")
-                # عرض الجدول البسيط
-                for name, img_count in folder_info_list:
-                    st.write(f"- {name}: {img_count} صورة")
-                st.markdown(f"**عدد مواضع الصور (من الشريحة الأولى): {len(image_positions)}**")
+            # تحقق من وجود اختيار سابق مخزن في session_state
+            if 'mismatch_action' in st.session_state:
+                mismatch_action = st.session_state['mismatch_action']
+            else:
+                mismatch_action = None
 
-                # خيارات التعامل
-                choice = st.radio(
-                    "اختر كيف تريد التعامل مع المجلدات التي يختلف عدد صورها عن عدد المواضع:",
-                    (
-                        "استبدال فقط حتى أقل عدد (تجاهل الصور الزائدة أو المواضع الفارغة)",
-                        "تكرار الصور لملء جميع المواضع",
-                        "تخطي المجلدات ذات الاختلاف",
-                        "إيقاف العملية"
-                    ),
-                    key='mismatch_choice'
-                )
-                if 'mismatch_confirmed' not in st.session_state:
-                    if st.button("✅ تأكيد الاختيار والمتابعة"):
-                        st.session_state['mismatch_confirmed'] = True
-                        st.experimental_rerun()
-                    else:
-                        st.stop()
+            if mismatch_folders and mismatch_action is None:
+                # إظهار تفاصيل والطلب عبر form لتجنب rerun غير مرغوب
+                with st.form("mismatch_form"):
+                    st.warning("⚠ تم اكتشاف اختلاف في عدد الصور لبعض المجلدات مقارنة بعدد مواضع الصور في الشريحة الأولى.")
+                    for name, img_count in folder_info_list:
+                        st.write(f"- {name}: {img_count} صورة")
+                    st.markdown(f"**عدد مواضع الصور (من الشريحة الأولى): {len(image_positions)}**")
 
+                    choice = st.radio(
+                        "اختر كيف تريد التعامل مع المجلدات التي يختلف عدد صورها عن عدد المواضع:",
+                        (
+                            "استبدال فقط حتى أقل عدد (truncate)",
+                            "تكرار الصور لملء جميع المواضع (repeat)",
+                            "تخطي المجلدات ذات الاختلاف (skip_folder)",
+                            "إيقاف العملية (stop)"
+                        ),
+                        key='mismatch_choice'
+                    )
+                    submit_choice = st.form_submit_button("✅ تأكيد الاختيار والمتابعة")
+                if not submit_choice:
+                    st.stop()
                 # ترجمة الاختيار إلى رمز داخلي
                 if choice.startswith("استبدال فقط"):
                     mismatch_action = 'truncate'
@@ -371,10 +394,14 @@ if uploaded_pptx and uploaded_zip:
                     mismatch_action = 'skip_folder'
                 else:
                     mismatch_action = 'stop'
-            else:
-                mismatch_action = 'truncate'  # افتراضي
+                # حفظ الاختيار في الجلسة لتجنب السلوك الذي يبعث التطبيق لإعادة البداية
+                st.session_state['mismatch_action'] = mismatch_action
 
-            # حذف جميع الشرائح الموجودة (طريقة آمنة) - نفس التحسين السابق
+            # إذا لم يكن هناك اختلاف أو الاختيار مخزن سابقاً - نضبط الافتراضي
+            if mismatch_action is None:
+                mismatch_action = 'truncate'
+
+            # حذف جميع الشرائح الموجودة (طريقة آمنة)
             st.info("🗑️ جاري حذف الشرائح الموجودة...")
             sldIdLst = prs.slides._sldIdLst
             for idx in range(len(sldIdLst) - 1, -1, -1):
@@ -434,9 +461,9 @@ if uploaded_pptx and uploaded_zip:
                     # الحصول على مواقع الصور في الشريحة الجديدة
                     new_image_positions = get_image_positions(new_slide)
 
-                    # استبدال الصور (نمرر سياسة التعامل مع الاختلاف)
+                    # استبدال الصور (نمرر prs لاستخدام عرض الشريحة إذا لزم)
                     replaced_count, message = replace_images_in_slide(
-                        new_slide, folder_path, folder_name, new_image_positions, show_details, mismatch_action
+                        prs, new_slide, folder_path, folder_name, new_image_positions, show_details, mismatch_action
                     )
 
                     total_replaced += replaced_count
@@ -513,7 +540,7 @@ else:
 
         1. **ملف PowerPoint (.pptx):**
            - يجب أن يحتوي على شريحة واحدة على الأقل
-           - الشريحة الأولى يجب أن تحتوي على صور أو placeholders للصور
+           - إن لم تحتوي الشريحة الأولى على مواضع صور، سيُطلب منك التأكيد للمتابعة
            - سيتم استخدام تنسيق الشريحة الأولى كقالب
 
         2. **ملف ZIP:**
@@ -524,8 +551,10 @@ else:
         3. **النتيجة:**
            - شريحة منفصلة لكل مجلد
            - الصور ستحل محل الصور الأصلية أو placeholders
-           - الحفاظ على نفس التنسيق والأحجام
+           - إذا لم توجد مواضع في القالب، تُضاف الصورة الأولى مملوءة بعرض الشريحة
+           - الحفاظ على نفس التنسيق والأحجام قدر الإمكان
 
         ### أنواع الصور المدعومة:
         - PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP
         """)
+
