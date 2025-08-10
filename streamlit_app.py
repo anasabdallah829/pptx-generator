@@ -255,17 +255,10 @@ def main():
                     st.error("❌ تم إيقاف العملية بناءً على اختيار المستخدم.")
                     st.stop()
 
-                # حفظ قالب الشريحة الأولى
-                slide_layout = analysis_result['slide_layout']
-
-                # إنشاء عرض تقديمي جديد تمامًا
-                new_prs = Presentation()
-                new_prs.slide_width = prs.slide_width
-                new_prs.slide_height = prs.slide_height
-
-                st.info("🔄 جاري إنشاء الشرائح الجديدة...")
+                st.info("🔄 جاري إضافة الشرائح الجديدة...")
                 total_replaced = 0
                 created_slides = 0
+                slide_layout = analysis_result['slide_layout']
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -285,14 +278,13 @@ def main():
                             st.info(f"ℹ تم تخطي المجلد {folder_name} لوجود اختلاف في عدد الصور.")
                         continue
 
-                    new_slide = new_prs.slides.add_slide(slide_layout)
+                    new_slide = prs.slides.add_slide(slide_layout)
                     created_slides += 1
                     
-                    # استخراج المواضع من الشريحة الجديدة
                     new_image_positions = get_image_positions(new_slide)
 
                     replaced_count, message = replace_images_in_slide(
-                        new_prs, new_slide, folder_path, folder_name, new_image_positions, show_details, mismatch_action
+                        prs, new_slide, folder_path, folder_name, new_image_positions, show_details, mismatch_action
                     )
                     total_replaced += replaced_count
                     if show_details:
@@ -308,18 +300,18 @@ def main():
                 if 'process_started' in st.session_state: del st.session_state['process_started']
 
                 col1, col2, col3 = st.columns(3)
-                with col1: st.metric("الشرائح المُنشأة", created_slides)
+                with col1: st.metric("الشرائح المُضافة", created_slides)
                 with col2: st.metric("الصور المُستبدلة", total_replaced)
                 with col3: st.metric("المجلدات المُعالجة", len(folder_paths))
 
                 if created_slides == 0:
-                    st.error("❌ لم يتم إنشاء أي شرائح.")
+                    st.error("❌ لم يتم إضافة أي شرائح.")
                     st.stop()
 
                 original_name = os.path.splitext(uploaded_pptx.name)[0]
                 output_filename = f"{original_name}_Updated.pptx"
                 output_buffer = io.BytesIO()
-                new_prs.save(output_buffer)
+                prs.save(output_buffer)
                 output_buffer.seek(0)
 
                 st.success(f"✅ تم إنشاء ملف PowerPoint جديد بـ {created_slides} شريحة!")
