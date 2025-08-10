@@ -8,6 +8,7 @@ import shutil
 import pptx
 from pptx.oxml.ns import qn
 from pptx.util import Inches
+from pptx.enum.shapes import MSO_SHAPE as types_MSO_SHAPE
 
 # تحديد نوع الشكل المراد استخدامه
 PICTURE_SHAPE_TYPE = None
@@ -43,12 +44,36 @@ uploaded_zip = st.file_uploader("🗜️ اختر ملف ZIP يحتوي على �
 show_details = st.checkbox("عرض التفاصيل المفصلة", value=False)
 
 
-def remove_slide(prs, slide):
+def delete_slide(presentation, slide_index):
     """
-    حذف شريحة من العرض التقديمي.
+    حذف شريحة من العرض التقديمي باستخدام فهرسها.
     """
-    r_id = prs.slides._sldIdLst.index(slide.slide_id)
-    prs.slides._sldIdLst.remove(slide.slide_id)
+    slides = list(presentation.slides)
+    slides_with_id = [(s, s.slide_id) for s in slides]
+    
+    if slide_index >= len(slides):
+        return
+    
+    slide = slides_with_id[slide_index][0]
+    slide_id = slides_with_id[slide_index][1]
+    
+    p = presentation.part
+    # find rId of slide
+    for rId, part in p.rels.items():
+        if part.target_ref == slide.part.partname:
+            # remove relationship
+            p.rels.pop(rId)
+            break
+            
+    # find slide in the slide list
+    slide_list_id = [e.get('id') for e in p.slide_ids._sldIdLst]
+    
+    # get index of the slide in the list
+    index_to_remove = slide_list_id.index(str(slide_id))
+    
+    # remove slide from the list
+    p.slide_ids._sldIdLst.pop(index_to_remove)
+
 
 def analyze_first_slide(prs):
     """
@@ -60,7 +85,7 @@ def analyze_first_slide(prs):
     first_slide = prs.slides[0]
     picture_placeholders = [
         shape for shape in first_slide.shapes
-        if shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE
+        if shape.is_placeholder and first_slide.shapes.get(shape.name).placeholder_format.type == PP_PLACEHOLDER.PICTURE
     ]
     regular_pictures = [
         shape for shape in first_slide.shapes
@@ -264,9 +289,8 @@ def main():
                     st.stop()
 
                 st.info("🗑️ جاري حذف الشرائح الموجودة...")
-                while prs.slides:
-                    slide = prs.slides[0]
-                    remove_slide(prs, slide)
+                while len(prs.slides) > 0:
+                    delete_slide(prs, 0)
                 st.success("✅ تم حذف جميع الشرائح القديمة.")
                 
                 st.info("🔄 جاري إنشاء الشرائح الجديدة...")
