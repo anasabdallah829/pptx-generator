@@ -29,16 +29,25 @@ image_order_option = st.radio(
 if 'processing_details' not in st.session_state:
     st.session_state.processing_details = []
 
+# متغير لتتبع ما إذا كان هناك حاجة لإظهار التفاصيل
+if 'show_details_needed' not in st.session_state:
+    st.session_state.show_details_needed = False
+
 def add_detail(message, detail_type="info"):
     """إضافة تفصيل جديد إلى قائمة التفاصيل"""
     st.session_state.processing_details.append({
         'message': message,
         'type': detail_type
     })
+    
+    # تحديد ما إذا كان هناك حاجة لإظهار التفاصيل
+    if detail_type in ['error', 'warning']:
+        st.session_state.show_details_needed = True
 
 def clear_details():
-    """مسح جميع التفاصيل"""
+    """مسح جميع التفاصيل وإعادة تعيين حالة الإظهار"""
     st.session_state.processing_details = []
+    st.session_state.show_details_needed = False
 
 def show_details_section():
     """عرض قسم التفاصيل"""
@@ -53,6 +62,12 @@ def show_details_section():
                     st.error(detail['message'])
                 else:
                     st.info(detail['message'])
+
+def show_details_button():
+    """عرض زر إظهار التفاصيل"""
+    if st.session_state.processing_details:
+        if st.button("📋 إظهار تفاصيل المعالجة"):
+            show_details_section()
 
 
 def analyze_first_slide(prs):
@@ -454,9 +469,7 @@ def main():
             
             temp_dir = None
             try:
-                st.info("📦 جاري فحص الملفات...")
-                add_detail("📦 بدء فحص الملفات المرفوعة", "info")
-                
+                # معالجة صامتة للخطوات الأولية
                 zip_bytes = io.BytesIO(uploaded_zip.read())
                 with zipfile.ZipFile(zip_bytes, "r") as zip_ref:
                     temp_dir = "temp_images"
@@ -483,33 +496,26 @@ def main():
                 if not folder_paths:
                     st.error("❌ لا توجد مجلدات تحتوي على صور في الملف المضغوط.")
                     add_detail("❌ لا توجد مجلدات تحتوي على صور في الملف المضغوط", "error")
+                    # إظهار التفاصيل عند وجود خطأ
                     show_details_section()
                     st.stop()
                 
                 folder_paths.sort()
-                st.success(f"✅ تم العثور على {len(folder_paths)} مجلد يحتوي على صور")
                 add_detail(f"✅ تم العثور على {len(folder_paths)} مجلد يحتوي على صور", "success")
 
                 prs = Presentation(io.BytesIO(uploaded_pptx.read()))
                 
-                st.info("🔍 جاري تحليل الشريحة الأولى...")
                 add_detail("🔍 بدء تحليل الشريحة الأولى", "info")
                 
                 ok, analysis_result = analyze_first_slide(prs)
                 if not ok:
                     st.error(f"❌ {analysis_result}")
                     add_detail(f"❌ {analysis_result}", "error")
+                    # إظهار التفاصيل عند وجود خطأ
                     show_details_section()
                     st.stop()
                 
-                st.success("✅ تحليل الشريحة الأولى جاهز")
                 add_detail("✅ تم تحليل الشريحة الأولى بنجاح", "success")
-                
-                col1, col2, col3 = st.columns(3)
-                with col1: st.metric("Placeholders للصور", analysis_result['placeholders'])
-                with col2: st.metric("الصور العادية", analysis_result['regular_pictures'])
-                with col3: st.metric("إجمالي أماكن الصور", analysis_result['total_slots'])
-                
                 add_detail(f"📊 تفاصيل التحليل: {analysis_result['placeholders']} placeholders، {analysis_result['regular_pictures']} صور عادية، {analysis_result['total_slots']} إجمالي", "info")
                 
                 first_slide = prs.slides[0]
@@ -517,7 +523,6 @@ def main():
                 template_positions = get_template_image_positions(first_slide)
                 
                 if not template_shapes_info and not template_positions:
-                    st.warning("⚠ الشريحة الأولى لا تحتوي على مواضع صور. سيتم إضافة الصورة الأولى من كل مجلد فقط.")
                     add_detail("⚠ الشريحة الأولى لا تحتوي على مواضع صور", "warning")
                     slide_layout = prs.slide_layouts[6]  # Blank layout
                 else:
@@ -533,8 +538,10 @@ def main():
                         mismatch_folders.append((os.path.basename(fp), len(imgs), expected_count))
                 
                 if mismatch_folders and 'mismatch_action' not in st.session_state:
+                    # إظهار التحذير والتفاصيل
+                    st.warning("⚠ تم اكتشاف اختلاف في عدد الصور لبعض المجلدات مقارنة بعدد مواضع الصور في الشريحة الأولى.")
+                    
                     with st.form("mismatch_form"):
-                        st.warning("⚠ تم اكتشاف اختلاف في عدد الصور لبعض المجلدات مقارنة بعدد مواضع الصور في الشريحة الأولى.")
                         for name, img_count, _ in mismatch_folders:
                             st.write(f"- المجلد `{name}` يحتوي على {img_count} صورة.")
                             add_detail(f"⚠ المجلد '{name}' يحتوي على {img_count} صورة بدلاً من {expected_count}", "warning")
@@ -546,6 +553,9 @@ def main():
                             index=0
                         )
                         submit_choice = st.form_submit_button("✅ تأكيد الاختيار والمتابعة")
+
+                    # إظهار التفاصيل عند وجود تحذيرات
+                    show_details_section()
 
                     if submit_choice:
                         if choice_text.startswith("استبدال فقط"): 
@@ -561,7 +571,6 @@ def main():
                             st.session_state['mismatch_action'] = 'stop'
                             add_detail("⚙️ تم اختيار: إيقاف العملية", "info")
                     else:
-                        show_details_section()
                         st.stop()
                 
                 if 'mismatch_action' in st.session_state:
@@ -572,10 +581,11 @@ def main():
                 if mismatch_action == 'stop':
                     st.error("❌ تم إيقاف العملية بناءً على اختيار المستخدم.")
                     add_detail("❌ تم إيقاف العملية بناءً على اختيار المستخدم", "error")
+                    # إظهار التفاصيل عند الإيقاف
                     show_details_section()
                     st.stop()
 
-                st.info("🔄 جاري إضافة الشرائح الجديدة...")
+                # معالجة صامتة للشرائح
                 add_detail("🔄 بدء إضافة الشرائح الجديدة", "info")
                 
                 total_replaced = 0
@@ -605,7 +615,6 @@ def main():
                         add_detail(f"✅ تم إنشاء شريحة للمجلد '{folder_name}' واستبدال {replaced_count} صورة", "success")
                     
                     except Exception as e:
-                        st.error(f"❌ خطأ في معالجة المجلد {folder_name}: {e}")
                         add_detail(f"❌ خطأ في معالجة المجلد {folder_name}: {e}", "error")
 
                     progress_bar.progress((folder_idx + 1) / len(folder_paths))
