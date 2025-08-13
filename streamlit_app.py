@@ -1,7 +1,3 @@
-اعتمد هذا الكود النهائي 
-فقط اريد عمل تنسيقات الصفحة مثل هذا 
-https://github.com/anasabdallah829/slide-sync-images
-"
 import streamlit as st 
 import zipfile 
 import os 
